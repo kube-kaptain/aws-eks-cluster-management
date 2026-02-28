@@ -6,10 +6,10 @@ DEPLOY_SCRIPTS_URL="https://github.com/kube-kaptain/kaptain-deploy-scripts/relea
 
 mkdir -p "${OUTPUT_SUB_PATH}/copy-scripts"
 curl -sLo "${OUTPUT_SUB_PATH}/copy-scripts/deployscripts.zip" "${DEPLOY_SCRIPTS_URL}"
-unzip -o "${OUTPUT_SUB_PATH}/copy-scripts/deployscripts.zip" scripts/decrypt-age -d "${OUTPUT_SUB_PATH}/copy-scripts"
+unzip -o "${OUTPUT_SUB_PATH}/copy-scripts/deployscripts.zip" plugins/decryption-providers/decrypt-age -d "${OUTPUT_SUB_PATH}/copy-scripts"
 
 cp src/scripts/* "${DOCKER_CONTEXT_SUB_PATH_LINUX_AMD64}/scripts/"
-cp "${OUTPUT_SUB_PATH}/copy-scripts/scripts/decrypt-age" "${DOCKER_CONTEXT_SUB_PATH_LINUX_AMD64}/scripts/"
+cp "${OUTPUT_SUB_PATH}/copy-scripts/plugins/decryption-providers/decrypt-age" "${DOCKER_CONTEXT_SUB_PATH_LINUX_AMD64}/scripts/"
 
 cp src/scripts/* "${DOCKER_CONTEXT_SUB_PATH_LINUX_ARM64}/scripts/"
-cp "${OUTPUT_SUB_PATH}/copy-scripts/scripts/decrypt-age" "${DOCKER_CONTEXT_SUB_PATH_LINUX_ARM64}/scripts/"
+cp "${OUTPUT_SUB_PATH}/copy-scripts/plugins/decryption-providers/decrypt-age" "${DOCKER_CONTEXT_SUB_PATH_LINUX_ARM64}/scripts/"
