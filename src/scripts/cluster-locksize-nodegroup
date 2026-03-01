@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Lock the size of a nodegroup by setting min and max to the current node count
+#
+# Usage: cluster locksize nodegroup <nodegroup-name>
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: cluster locksize nodegroup <nodegroup-name>" >&2
+  exit 1
+fi
+
+nodegroup_name="$1"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+current_count=$(eksctl get nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" -o yaml | yq '.[0].DesiredCapacity')
+
+if [[ -z "${current_count}" || "${current_count}" == "null" ]]; then
+  echo "ERROR: Could not determine current size of nodegroup ${nodegroup_name}" >&2
+  exit 1
+fi
+
+echo "Locking nodegroup ${nodegroup_name} to ${current_count} node(s) (min=${current_count}, max=${current_count})..."
+eksctl scale nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" --nodes "${current_count}" --nodes-min "${current_count}" --nodes-max "${current_count}"
+echo "Nodegroup ${nodegroup_name} locked at ${current_count} node(s)."

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Cordon router - delegates to cluster-cordon-<noun> scripts
+#
+# Usage: cluster cordon <noun> [args...]
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+usage() {
+  echo "Usage: cluster cordon <noun> [args...]"
+  echo ""
+  echo "Available nouns:"
+  for script in "${CLUSTER_SCRIPT_DIR}"/cluster-cordon-*; do
+    if [[ -x "${script}" ]]; then
+      noun="$(basename "${script}")"
+      noun="${noun#cluster-cordon-}"
+      echo "  ${noun}"
+    fi
+  done
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+noun="$1"
+shift
+
+case "${noun}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  *)
+    noun_script="${CLUSTER_SCRIPT_DIR}/cluster-cordon-${noun}"
+    if [[ -x "${noun_script}" ]]; then
+      exec "${noun_script}" "$@"
+    else
+      echo "ERROR: Unknown cordon noun '${noun}'" >&2
+      echo "" >&2
+      usage >&2
+      exit 1
+    fi
+    ;;
+esac

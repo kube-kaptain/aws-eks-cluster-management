@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Delete an EKS cluster with interactive confirmation
+set -euo pipefail
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Please enter the name of the cluster to confirm you are trying to delete what you want:"
+read -r entered_name
+
+if [[ "${entered_name}" != "${cluster_name}" ]]; then
+  echo "ERROR: '${entered_name}' does not match cluster '${cluster_name}' from ${CLUSTER_CONFIG}" >&2
+  exit 1
+fi
+
+echo ""
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo "!!!         WARNING: You are about to delete the following cluster:          !!!"
+echo "!!!                                                                          !!!"
+printf "!!!%*s%*s!!!\n" $(( (74 + ${#cluster_name}) / 2 )) "${cluster_name}" $(( (74 - ${#cluster_name}) / 2 )) ""
+echo "!!!                                                                          !!!"
+echo "!!!                     THIS ACTION CANNOT BE UNDONE                         !!!"
+echo "!!!                                                                          !!!"
+echo "!!!   All workloads, data, and resources in this cluster will be destroyed!  !!!"
+echo "!!!                                                                          !!!"
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo ""
+echo "To confirm, type exactly: \"Yes, delete this cluster.\""
+read -r confirmation
+
+if [[ "${confirmation}" != "Yes, delete this cluster." ]]; then
+  echo "Confirmation did not match. Aborting."
+  exit 1
+fi
+
+echo ""
+echo "Deleting cluster ${cluster_name}..."
+eksctl delete cluster --name "${cluster_name}" --wait
+echo "Cluster ${cluster_name} deleted."

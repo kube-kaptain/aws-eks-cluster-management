@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Bootstrap Cilium CNI on a newly created EKS cluster
+#
+# Usage: cluster bootstrap cilium [--dry-run]
+set -euo pipefail
+
+echo "TODO: Cilium bootstrap not available yet."
+exit 1

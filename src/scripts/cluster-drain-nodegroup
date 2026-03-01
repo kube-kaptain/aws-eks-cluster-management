@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Drain all nodes in a nodegroup
+#
+# Usage: cluster drain nodegroup <nodegroup-name> [--force]
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+force=""
+args=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--force" ]]; then
+    force="--force"
+  else
+    args+=("${arg}")
+  fi
+done
+
+if [[ ${#args[@]} -lt 1 ]]; then
+  echo "Usage: cluster drain nodegroup <nodegroup-name> [--force]" >&2
+  exit 1
+fi
+
+nodegroup_name="${args[0]}"
+
+nodes=$(kubectl get nodes -l "eks.amazonaws.com/nodegroup=${nodegroup_name}" -o jsonpath='{.items[*].metadata.name}')
+
+if [[ -z "${nodes}" ]]; then
+  echo "No nodes found in nodegroup ${nodegroup_name}"
+  exit 0
+fi
+
+echo "Draining all nodes in nodegroup ${nodegroup_name}..."
+for node in ${nodes}; do
+  echo "  Draining ${node}..."
+  "${CLUSTER_SCRIPT_DIR}/cluster-drain-node" "${node}" ${force}
+done
+echo "All nodes in nodegroup ${nodegroup_name} drained."

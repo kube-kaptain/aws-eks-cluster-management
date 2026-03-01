@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List everything: clusters, then per-cluster nodegroups, addons, and nodes
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+errors=0
+
+run_section() {
+  local label="$1"
+  local script="$2"
+  echo "${label}"
+  echo ""
+  if ! "${script}"; then
+    echo "  (failed)"
+    errors=$((errors + 1))
+  fi
+  echo ""
+}
+
+run_section "Clusters" "${CLUSTER_SCRIPT_DIR}/cluster-list-clusters"
+
+echo "Cluster ${cluster_name}:"
+echo ""
+
+run_section "Nodegroups" "${CLUSTER_SCRIPT_DIR}/cluster-list-nodegroups"
+run_section "Addons" "${CLUSTER_SCRIPT_DIR}/cluster-list-addons"
+run_section "Nodes" "${CLUSTER_SCRIPT_DIR}/cluster-list-nodes"
+
+if [[ ${errors} -gt 0 ]]; then
+  echo "${errors} section(s) failed."
+  exit 1
+fi

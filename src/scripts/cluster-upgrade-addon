@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Upgrade a single EKS addon
+#
+# Usage: cluster upgrade addon <addon-name> [target-version] [--force]
+set -euo pipefail
+
+force=""
+args=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--force" ]]; then
+    force="--force"
+  else
+    args+=("${arg}")
+  fi
+done
+
+if [[ ${#args[@]} -lt 1 || ${#args[@]} -gt 2 ]]; then
+  echo "Usage: $(basename "$0") <addon-name> [target-version] [--force]" >&2
+  exit 1
+fi
+
+addon_name="${args[0]}"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+version_flag=""
+if [[ ${#args[@]} -eq 2 ]]; then
+  version_flag="--version ${args[1]}"
+  echo "Upgrading addon ${addon_name} to ${args[1]} on cluster ${cluster_name}..."
+else
+  echo "Upgrading addon ${addon_name} to latest on cluster ${cluster_name}..."
+fi
+
+# shellcheck disable=SC2086 # version_flag and force must word-split when set, disappear when empty
+eksctl update addon --cluster "${cluster_name}" --name "${addon_name}" ${version_flag} ${force}

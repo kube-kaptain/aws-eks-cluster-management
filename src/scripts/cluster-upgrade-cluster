@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Upgrade an EKS cluster to match the full cluster.yaml config
+#
+# Usage: cluster upgrade [--dry-run]
+set -euo pipefail
+
+dry_run=""
+if [[ "${1:-}" == "--dry-run" ]]; then
+  dry_run="--dry-run"
+  shift
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Upgrading cluster ${cluster_name}..."
+eksctl upgrade cluster -f "${CLUSTER_CONFIG}" ${dry_run:---approve}
+
+echo ""
+if [[ -n "${dry_run}" ]]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Cluster ${cluster_name} upgraded successfully."
+fi
