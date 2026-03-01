@@ -92,6 +92,11 @@ RUN mkdir -p /kd/eks      # Home for cluster.yaml and variants
 ENV PATH="/kd/bin:${PATH}"
 WORKDIR /kd
 
+# Vars for the scripts to be portable
+ENV CLUSTER_SCRIPT_DIR=/kd/bin
+ENV CLUSTER_CONFIG=/kd/eks/cluster.yaml
+ENV CLUSTER_CONTROLPLANE_ONLY_CONFIG=/kd/eks/cluster-controlplane-only.yaml
+
 # Create cluster maintenance user
 ENV KAPTAIN_USER_ID=4242
 RUN mkdir -p /home/kaptain
@@ -100,7 +105,20 @@ RUN useradd -u ${KAPTAIN_USER_ID} -g kaptain -d /home/kaptain -s /bin/bash kapta
 RUN chown kaptain:kaptain /home/kaptain /kd/work
 # Final use downstream image should set USER for immutability in use
 
-# TODO write the scripts and write the script to copy them to context in a hook call - wait till I tell you what to write on this one 
-COPY scripts/* /kd/bin/
+# Give the user immediate context
+ENV PS1="cluster:\$(yq eval '.metadata.name // \"NOT_CONFIGURED\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NOT_CONFIGURED')\$ "
 
-# TODO prompt taht works no matter what with echos for instructions - I'll provide instruciton on how to do this one - don't do it until I give you the instructions 
+# Make the UX nicer by providing bash completion for the command set
+COPY cluster-completion.bash /home/kaptain/
+
+# Configure login behaviour for all shells
+RUN echo 'source /home/kaptain/cluster-completion.bash' >> /etc/bash.bashrc
+RUN echo "${CLUSTER_SCRIPT_DIR}/cluster-welcome" >> /etc/bash.bashrc
+RUN rm -f /root/.bashrc /root/.profile
+RUN ln -s /etc/profile /root/.profile
+RUN ln -s /etc/bash.bashrc /root/.bashrc
+RUN ln -s /etc/profile /home/kaptain/.profile
+RUN ln -s /etc/bash.bashrc /home/kaptain/.bashrc
+
+# Pull all aggregated scripts together into our path
+COPY scripts/* /kd/bin/

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Display cluster creation guide
+#
+# Usage: cluster document creation
+set -euo pipefail
+
+cat <<'EOF'
+To create a new cluster just:
+
+1. Run `cluster validate-image` to ensure it's viable
+2. Run `cluster setup-credentials` to make the commands work
+3. Run `cluster create --dry-run` and ensure it looks good and as expected
+4. Run `cluster create` and ensure it creates smoothly and without errors
+5. Run `cluster list all` to see what you created
+6. Bootstrap/seed the cluster with tooling and workloads - easy if kaptain
+
+EOF

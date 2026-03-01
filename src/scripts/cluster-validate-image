@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Validate the final built image has everything it needs to operate
+set -euo pipefail
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+age_file="/kd/secrets/aws-credentials.age"
+errors=0
+
+# cluster.yaml must exist
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "FAIL: ${CLUSTER_CONFIG} not found"
+  exit 1
+fi
+
+# cluster name must be set
+cluster_name=$(yq '.metadata.name // ""' "${CLUSTER_CONFIG}")
+if [[ -z "${cluster_name}" ]]; then
+  echo "FAIL: metadata.name not set in ${CLUSTER_CONFIG}"
+  errors=$((errors + 1))
+fi
+
+# region must be set
+region=$(yq '.metadata.region // ""' "${CLUSTER_CONFIG}")
+if [[ -z "${region}" ]]; then
+  echo "FAIL: metadata.region not set in ${CLUSTER_CONFIG}"
+  errors=$((errors + 1))
+fi
+
+# addons must not pin versions
+addon_count=$(yq '.addons | length' "${CLUSTER_CONFIG}")
+for i in $(seq 0 $((addon_count - 1))); do
+  addon_name=$(yq ".addons[${i}].name" "${CLUSTER_CONFIG}")
+  addon_version=$(yq ".addons[${i}].version // \"\"" "${CLUSTER_CONFIG}")
+  if [[ -n "${addon_version}" ]]; then
+    echo "FAIL: addon ${addon_name} has pinned version ${addon_version} - remove it"
+    errors=$((errors + 1))
+  fi
+done
+
+# age file is optional but warn if missing
+if [[ ! -f "${age_file}" ]]; then
+  echo "WARN: ${age_file} not found - credentials will need to be entered manually"
+fi
+
+if [[ ${errors} -gt 0 ]]; then
+  echo ""
+  echo "Validation failed with ${errors} error(s)"
+  exit 1
+fi
+
+echo "Validation passed"

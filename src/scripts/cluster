@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Cluster management router - delegates to cluster-<verb> scripts
+#
+# Usage: cluster <verb> [args...]
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+usage() {
+  echo "Usage comes in two styles:"
+  echo "  1: cluster <command> [args...]"
+  echo "  2: cluster <verb> <noun> [args...]"
+  echo ""
+  echo "Note:"
+  echo "  Commands are scripts with space replaced by hypone and can be called directly."
+  echo ""
+  echo "For example the following two hypothetical calls are exactly equivalent:"
+  echo "  1: cluster foo bar --bbq"
+  echo "  2: cluster-foo-bar --bbq"
+  echo ""
+  echo "Available verbs and commands:"
+  for script in "${CLUSTER_SCRIPT_DIR}"/cluster-*; do
+    if [[ -x "${script}" ]]; then
+      name="$(basename "${script}")"
+      name="${name#cluster-}"
+      # If name contains a hyphen, check if a parent router exists
+      if [[ "${name}" == *-* ]]; then
+        parent="${name%%-*}"
+        if [[ -x "${CLUSTER_SCRIPT_DIR}/cluster-${parent}" ]]; then
+          continue
+        fi
+      fi
+      echo "  ${name}"
+    fi
+  done
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+verb="$1"
+shift
+
+case "${verb}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  *)
+    sub_router="${CLUSTER_SCRIPT_DIR}/cluster-${verb}"
+    if [[ -x "${sub_router}" ]]; then
+      exec "${sub_router}" "$@"
+    else
+      echo "ERROR: Unknown verb '${verb}'" >&2
+      echo "" >&2
+      usage >&2
+      exit 1
+    fi
+    ;;
+esac

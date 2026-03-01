@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Display cluster maintenance guide
+#
+# Usage: cluster document maintenance
+set -euo pipefail
+
+cat <<'EOF'
+A normal maintenance run looks like this:
+
+1. Ensure all components in the cluster are compatible with the target version
+2. Run `cluster validate-image` to ensure it's viable
+3. Run `cluster setup-credentials` to make the commands work
+4. Run `cluster list all` to get the lay of the land
+5. Run `cluster upgrade addons` to get the addons up to date as a base line
+6. Run `cluster upgrade cluster` upgrade control plane and create new nodegroups
+7. Run `cluster cordon oldnodegroups` to prevent workloads starting up on them
+8. Delete a low-impact pod and ensure it starts up fine on the new node group(s)
+9. Gently and thoughtfully migrate any singletons or other senstive workloads
+10. Run `cluster drain oldnodegroups` to migrate any remaining workloads
+11. Confirm everything you care about is running and working fine
+12. Run `cluster delete oldnodegroups` to remove the empty unused nodes
+13. Run `cluster upgrade addons` to get the addons up to date and matching
+14. Upgrade other components within the cluster to match
+
+EOF

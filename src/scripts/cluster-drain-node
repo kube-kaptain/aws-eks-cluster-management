@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Drain a single node, evicting all pods and preventing new scheduling
+#
+# Usage: cluster drain node <node-name> [--force]
+set -euo pipefail
+
+force=""
+args=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--force" ]]; then
+    force="--force"
+  else
+    args+=("${arg}")
+  fi
+done
+
+if [[ ${#args[@]} -lt 1 ]]; then
+  echo "Usage: cluster drain node <node-name> [--force]" >&2
+  exit 1
+fi
+
+node_name="${args[0]}"
+
+echo "Draining node ${node_name}..."
+kubectl drain "${node_name}" --ignore-daemonsets --delete-emptydir-data ${force}
+echo "Node ${node_name} drained."

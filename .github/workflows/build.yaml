@@ -21,4 +21,5 @@ jobs:
       docker-platform: 'linux/amd64,linux/arm64'
       dockerfile-sub-path-linux-amd64: 'src/docker'
       dockerfile-sub-path-linux-arm64: 'src/docker'
+      hook-pre-tagging-tests-script-sub-path: 'bin/run-tests.bash'
       hook-pre-docker-prepare-script-sub-path: 'bin/copy-scripts-to-docker-context.bash'

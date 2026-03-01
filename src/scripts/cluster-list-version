@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Show current EKS control plane version and compare with cluster.yaml config
+set -euo pipefail
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+configured_version=$(yq '.metadata.version' "${CLUSTER_CONFIG}")
+
+current_version=$(eksctl get cluster --name "${cluster_name}" -o yaml | yq '.[0].Version')
+
+echo "Current control plane version: ${current_version}"
+
+echo ""
+if [[ "${current_version}" == "${configured_version}" ]]; then
+  echo "Control plane for ${cluster_name} already matches the config in ${CLUSTER_CONFIG} (${configured_version})"
+else
+  echo "Cluster ${cluster_name} is ready to be upgraded from ${current_version} to ${configured_version}"
+fi

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Upgrade all EKS addons as defined in cluster.yaml
+#
+# Usage: cluster upgrade addons [--force]
+set -euo pipefail
+
+force=""
+if [[ "${1:-}" == "--force" ]]; then
+  force="--force"
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+echo "Upgrading addons..."
+eksctl update addon -f "${CLUSTER_CONFIG}" ${force}

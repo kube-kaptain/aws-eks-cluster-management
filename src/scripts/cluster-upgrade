@@ -2,21 +2,21 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
-# Delete router - delegates to cluster-delete-<noun> scripts
+# Upgrade router - delegates to cluster-upgrade-<noun> scripts
 #
-# Usage: cluster delete <noun> [args...]
+# Usage: cluster upgrade <noun> [args...]
 set -euo pipefail
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 
 usage() {
-  echo "Usage: cluster delete <noun> [args...]"
+  echo "Usage: cluster upgrade <noun> [args...]"
   echo ""
   echo "Available nouns:"
-  for script in "${CLUSTER_SCRIPT_DIR}"/cluster-delete-*; do
+  for script in "${CLUSTER_SCRIPT_DIR}"/cluster-upgrade-*; do
     if [[ -x "${script}" ]]; then
       noun="$(basename "${script}")"
-      noun="${noun#cluster-delete-}"
+      noun="${noun#cluster-upgrade-}"
       echo "  ${noun}"
     fi
   done
@@ -36,11 +36,11 @@ case "${noun}" in
     exit 0
     ;;
   *)
-    noun_script="${CLUSTER_SCRIPT_DIR}/cluster-delete-${noun}"
+    noun_script="${CLUSTER_SCRIPT_DIR}/cluster-upgrade-${noun}"
     if [[ -x "${noun_script}" ]]; then
       exec "${noun_script}" "$@"
     else
-      echo "ERROR: Unknown delete noun '${noun}'" >&2
+      echo "ERROR: Unknown upgrade noun '${noun}'" >&2
       echo "" >&2
       usage >&2
       exit 1

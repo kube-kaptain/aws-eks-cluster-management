@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Welcome message displayed on login to the container
+#
+# Usage: cluster welcome (or sourced from profile/bashrc)
+set -euo pipefail
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+cluster_name="NOT_CONFIGURED"
+region="NOT_CONFIGURED"
+if [[ -f "${CLUSTER_CONFIG}" ]]; then
+  cluster_name=$(yq '.metadata.name // "NOT_CONFIGURED"' "${CLUSTER_CONFIG}" 2>/dev/null || echo "NOT_CONFIGURED")
+  region=$(yq '.metadata.region // "NOT_CONFIGURED"' "${CLUSTER_CONFIG}" 2>/dev/null || echo "NOT_CONFIGURED")
+fi
+
+echo ""
+echo "Cluster: ${cluster_name}    Region: ${region}"
+echo ""
+echo "Guides:"
+echo "  cluster document creation       How to create a cluster"
+echo "  cluster document maintenance    How to maintain a cluster"
+echo "  cluster document deletion       How to delete a cluster"
+echo ""
+echo "Run 'cluster help' for available commands."
+
+if [[ -z "${BASH_VERSION:-}" ]]; then
+  echo ""
+  echo "NOTE: You are using sh. Use bash for tab completion support."
+else
+  echo ""
+  echo "Note: bash completion is available for all cluster commands."
+fi
+
+echo ""

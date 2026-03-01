@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List CloudFormation stacks managed by eksctl for this cluster
+#
+# Usage: cluster list stacks
+set -euo pipefail
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+stacks=$(eksctl utils describe-stacks --cluster "${cluster_name}" -o yaml)
+
+if [[ -z "${stacks}" || "${stacks}" == "null" ]]; then
+  echo "No stacks found for cluster ${cluster_name}"
+  exit 0
+fi
+
+headers=("NAME" "STATUS" "CREATED" "UPDATED")
+widths=(${#headers[0]} ${#headers[1]} ${#headers[2]} ${#headers[3]})
+
+rows=()
+while IFS=$'\t' read -r name status created updated; do
+  rows+=("${name}	${status}	${created}	${updated}")
+  (( ${#name} > widths[0] )) && widths[0]=${#name}
+  (( ${#status} > widths[1] )) && widths[1]=${#status}
+  (( ${#created} > widths[2] )) && widths[2]=${#created}
+  (( ${#updated} > widths[3] )) && widths[3]=${#updated}
+done < <(echo "${stacks}" | yq -r '.[] | [.StackName, .StackStatus, .CreationTime, (.LastUpdatedTime // "-")] | @tsv')
+
+fmt="%-$((widths[0]+2))s %-$((widths[1]+2))s %-$((widths[2]+2))s %-$((widths[3]+2))s\n"
+# shellcheck disable=SC2059 # format string is built from computed integer widths, not user input
+printf "${fmt}" "${headers[@]}"
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r name status created updated <<< "${row}"
+  # shellcheck disable=SC2059 # same format string as above
+  printf "${fmt}" "${name}" "${status}" "${created}" "${updated}"
+done

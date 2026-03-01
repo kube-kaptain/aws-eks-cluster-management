@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Display cluster deletion guide
+#
+# Usage: cluster document deletion
+set -euo pipefail
+
+cat <<'EOF'
+To delete a cluster for DR testing or other reasons, just:
+
+1. Run `cluster validate-image` to ensure it's viable
+2. Run `cluster setup-credentials` to make the commands work
+3. Run `cluster delete cluster` and type in the requested values to confirm
+4. Run `cluster list all` to ensure there's nothing left
+5. Clean up any external resources that the cluster was managing eg DNS/LBs
+6. Cry if you got it wrong, party if you got it right :-D
+
+EOF
