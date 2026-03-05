@@ -9,6 +9,7 @@ ENV EKSCTL_VERSION=0.223.0
 ENV KUBECTL_VERSION=1.32.13
 ENV AWS_CLI_VERSION=2.33.31
 ENV AGE_VERSION=1.3.1
+ENV YQ4_VERSION=4.50.1
 
 # AWS CLI architecture mappings (URL uses x86_64/aarch64, checksums use amd/arm)
 ENV AWS_CLI_URL_ARCH_amd64=x86_64
@@ -21,6 +22,8 @@ ENV KUBECTL_SHA512_amd64=8463c0546deeb6441b9b44909a104bc920ee32e6eb4a8e434b2ec2d
 ENV KUBECTL_SHA512_arm64=8023d3736e556b893732cc732df6b38fac8b710a9f6eac5fae0ac708af8823e932422666301360851ac83b95d21a5d93304b54691c6df669c4f3ddd16c79bdf5
 ENV AGE_SHA512_amd64=425e3f7bcd3bee2ac5e356d45f86b208a15a4ddf0c5fe512047fbe08d77a4b957b3c5db699c49c281bd20f8bc1e76ab93753ab99593ff747742808769dccc070
 ENV AGE_SHA512_arm64=7f7920f5f199e46b568bec464e870fd61baae67140ddb5ed104c458ee89cdfbb7c4f48873cfa73c1218dc2a023227e7bacf635480e678a480aeac04e0f330b1f
+ENV YQ4_SHA512_amd64=b1043cf55e440e7bd45c9c74b7bd2cdac76bbe9d6de6aff5eaa41159cc6c20c9225d9f7a80874f124a3e55b5732303e6f6164ed7aa7d32fa0d4077cb261782ce
+ENV YQ4_SHA512_arm64=b7b71e9911eb39594aca025f211de2790ba795690b5ac9e26db951f24f1b0bb1358ef7f1b3b6b5bbf4c276e251e906cab6138b621d49803a946f8566ce3c6b01
 
 # Leave a trail of breadcrumbs
 LABEL base.project.name="${ProjectName}"
@@ -81,6 +84,13 @@ RUN eval CHECKSUM=\$AGE_SHA512_${DOCKER_PLATFORM_CPU_ARCHITECTURE} && \
     echo "${CHECKSUM}  /tmp/age.tar.gz" | sha512sum -c -
 RUN tar xzf /tmp/age.tar.gz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
 RUN rm /tmp/age.tar.gz
+
+# Install yq 4
+RUN curl -sLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v${YQ4_VERSION}/yq_linux_${DOCKER_PLATFORM_CPU_ARCHITECTURE}"
+RUN sha512sum /usr/local/bin/yq
+RUN eval CHECKSUM=\$YQ4_SHA512_${DOCKER_PLATFORM_CPU_ARCHITECTURE} && \
+    echo "${CHECKSUM}  /usr/local/bin/yq" | sha512sum -c -
+RUN chmod +x /usr/local/bin/yq
 
 # Create directory structure
 RUN mkdir -p /kd/bin      # Cluster management scripts
