@@ -122,7 +122,7 @@ COPY bash-init.bash /usr/local/share/kaptain/
 COPY sh-init.sh /usr/local/share/kaptain/
 
 # Cluster-aware prompt defined once, applied by both shell init scripts
-ENV KAPTAIN_PS1="cluster:\$(yq eval '.metadata.name // \"NOT_CONFIGURED\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NOT_CONFIGURED')\$ "
+ENV KAPTAIN_PS1="cluster:\$(yq eval '.metadata.name // \"NOT_CONFIGURED\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NOT_CONFIGURED')@\$(yq eval '.metadata.version // \"NO_VERSION\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NO_VERSION')\$ "
 
 # sh/dash init: sourced via ENV variable for interactive sessions
 ENV ENV=/usr/local/share/kaptain/sh-init.sh
