@@ -7,29 +7,30 @@
 # Scans CLUSTER_SCRIPT_DIR for scripts matching the cluster-* naming convention
 # and provides tab completion that understands the routing hierarchy.
 #
-# Example:
-#   cluster <tab>        → list, create, delete, credentials, upgrade
-#   cluster list <tab>   → all, clusters, nodes, nodegroups, addons, version
-#   cluster list no<tab> → nodes, nodegroups
+# When a segment has no router script, the completion expands through the full
+# remaining path so the user doesn't stop at a non-existent intermediate command.
 #
+# Example:
+#   cluster <tab>             → list, create, delete, setup-credentials, upgrade
+#   cluster list <tab>        → all, clusters, nodes, nodegroups, addons, version
+#   cluster list no<tab>      → nodes, nodegroups
+#   cluster setup<tab>        → setup-credentials (no cluster-setup router exists)
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:-/kd/bin}"
 
 _cluster_completions() {
   local cmd="${1}"
   local cur="${2}"
-  local prev="${3}"
 
   # Build prefix from command name + all completed args joined with hyphens
   # e.g., "cluster" with args ["list"] → prefix "cluster-list"
-  # e.g., "cluster" with args ["list", "node"] would not happen (list-node not typed yet)
   local prefix="${cmd}"
   local i
   for ((i = 1; i < COMP_CWORD; i++)); do
     prefix="${prefix}-${COMP_WORDS[i]}"
   done
 
-  # Find all files matching prefix-* and extract the next segment
+  # Find all files matching prefix-* and extract completions
   local completions=()
   local seen=()
   local file segment
@@ -40,6 +41,14 @@ _cluster_completions() {
     local remainder="${file#"${prefix}-"}"
     # Extract first segment (up to next hyphen, or the whole thing)
     segment="${remainder%%-*}"
+
+    # If no router exists for this segment, use the full remainder
+    # e.g., no cluster-setup router → offer setup-credentials not setup
+    if [[ "${segment}" != "${remainder}" ]] && \
+       [[ ! -x "${CLUSTER_SCRIPT_DIR}/${prefix}-${segment}" ]]; then
+      segment="${remainder}"
+    fi
+
     # Deduplicate
     local already=false
     local s
