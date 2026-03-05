@@ -4,14 +4,23 @@
 #
 # Upgrade an EKS cluster to match the full cluster.yaml config
 #
-# Usage: cluster upgrade [--dry-run]
+# Usage: cluster upgrade cluster [--dry-run]
 set -euo pipefail
 
-dry_run=""
-if [[ "${1:-}" == "--dry-run" ]]; then
-  dry_run="--dry-run"
-  shift
-fi
+approve="--approve"
+case "${1:-}" in
+  --dry-run)
+    approve=""
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster upgrade cluster [--dry-run]" >&2
+    exit 1
+    ;;
+esac
 
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 
@@ -23,10 +32,10 @@ fi
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
 echo "Upgrading cluster ${cluster_name}..."
-eksctl upgrade cluster -f "${CLUSTER_CONFIG}" ${dry_run:---approve}
+eksctl upgrade cluster -f "${CLUSTER_CONFIG}" ${approve}
 
 echo ""
-if [[ -n "${dry_run}" ]]; then
+if [[ -z "${approve}" ]]; then
   echo "Dry run complete. No changes were made."
 else
   echo "Cluster ${cluster_name} upgraded successfully."
