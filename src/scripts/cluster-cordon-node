@@ -12,6 +12,12 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
+  echo "Usage: cluster cordon node <node-name>" >&2
+  exit 1
+fi
+
 node_name="$1"
 
 echo "Cordoning node ${node_name}..."
