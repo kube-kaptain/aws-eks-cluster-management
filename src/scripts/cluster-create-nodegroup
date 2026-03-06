@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Create a single EKS nodegroup from cluster.yaml
+#
+# Usage: cluster create nodegroup <nodegroup-name> [--dry-run]
+set -euo pipefail
+
+approve="--approve"
+args=()
+for arg in "$@"; do
+  case "${arg}" in
+    --dry-run)
+      approve=""
+      ;;
+    --*)
+      echo "ERROR: Unknown flag '${arg}'" >&2
+      echo "Usage: cluster create nodegroup <nodegroup-name> [--dry-run]" >&2
+      exit 1
+      ;;
+    *)
+      args+=("${arg}")
+      ;;
+  esac
+done
+
+if [[ ${#args[@]} -lt 1 ]]; then
+  echo "Usage: cluster create nodegroup <nodegroup-name> [--dry-run]" >&2
+  exit 1
+fi
+
+if [[ ${#args[@]} -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
+  echo "Usage: cluster create nodegroup <nodegroup-name> [--dry-run]" >&2
+  exit 1
+fi
+
+nodegroup_name="${args[0]}"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+# Validate nodegroup exists in config
+match=$(yq ".managedNodeGroups[] | select(.name == \"${nodegroup_name}\") | .name" "${CLUSTER_CONFIG}")
+
+if [[ -z "${match}" ]]; then
+  echo "ERROR: Nodegroup '${nodegroup_name}' not found in ${CLUSTER_CONFIG}" >&2
+  echo "" >&2
+  echo "Available nodegroups:" >&2
+  yq '.managedNodeGroups[].name' "${CLUSTER_CONFIG}" | sed 's/^/  /' >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Creating nodegroup ${nodegroup_name} on cluster ${cluster_name}..."
+# shellcheck disable=SC2086 # approve must word-split when set, disappear when empty
+eksctl create nodegroup -f "${CLUSTER_CONFIG}" --include="${nodegroup_name}" ${approve}
+
+echo ""
+if [[ -z "${approve}" ]]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Nodegroup ${nodegroup_name} created successfully."
+fi
