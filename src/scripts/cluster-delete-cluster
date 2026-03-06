@@ -19,6 +19,7 @@ if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
 fi
 
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+region=$(yq '.metadata.region' "${CLUSTER_CONFIG}")
 
 echo "Please enter the name of the cluster to confirm you are trying to delete what you want:"
 read -r entered_name
@@ -50,5 +51,5 @@ fi
 
 echo ""
 echo "Deleting cluster ${cluster_name}..."
-eksctl delete cluster --name "${cluster_name}" --wait
+eksctl delete cluster --name "${cluster_name}" --region "${region}" --wait
 echo "Cluster ${cluster_name} deleted."
