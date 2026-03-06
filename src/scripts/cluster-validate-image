@@ -55,18 +55,20 @@ if [[ -z "${region}" ]]; then
 fi
 
 # addon versions must be "latest" (resolved at deploy time)
-addon_count=$(yq '.addons | length' "${CLUSTER_CONFIG}")
-for i in $(seq 0 $((addon_count - 1))); do
-  addon_name=$(yq ".addons[${i}].name" "${CLUSTER_CONFIG}")
-  addon_version=$(yq ".addons[${i}].version // \"\"" "${CLUSTER_CONFIG}")
-  if [[ -z "${addon_version}" ]]; then
-    echo "FAIL: addon ${addon_name} version not set - must be 'latest'"
-    errors=$((errors + 1))
-  elif [[ "${addon_version}" != "latest" ]]; then
-    echo "FAIL: addon ${addon_name} version must be 'latest' (got: '${addon_version}')"
-    errors=$((errors + 1))
-  fi
-done
+addon_count=$(yq '.addons | length // 0' "${CLUSTER_CONFIG}")
+if [[ ${addon_count} -gt 0 ]]; then
+  for i in $(seq 0 $((addon_count - 1))); do
+    addon_name=$(yq ".addons[${i}].name" "${CLUSTER_CONFIG}")
+    addon_version=$(yq ".addons[${i}].version // \"\"" "${CLUSTER_CONFIG}")
+    if [[ -z "${addon_version}" ]]; then
+      echo "FAIL: addon ${addon_name} version not set - must be 'latest'"
+      errors=$((errors + 1))
+    elif [[ "${addon_version}" != "latest" ]]; then
+      echo "FAIL: addon ${addon_name} version must be 'latest' (got: '${addon_version}')"
+      errors=$((errors + 1))
+    fi
+  done
+fi
 
 # age file is optional but warn if missing
 if [[ ! -f "${age_file}" ]]; then
