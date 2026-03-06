@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Exec into a pod with bash
+#
+# Usage: k-exec-bash <namespace> <pod-name>
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: k-exec-bash <namespace> <pod-name>" >&2
+  exit 1
+fi
+
+exec kubectl -n "$1" exec -it "$2" -- /bin/bash

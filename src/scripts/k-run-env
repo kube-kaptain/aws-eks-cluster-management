@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Shorthand for kubectl -n <run-env-namespace>
+#
+# Smart lookup: finds namespaces starting with "run-" excluding "run-platform",
+# and caches the result. Fails hard if more than one match is found.
+#
+# Usage: k-run-env <kubectl-args...>
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: k-run-env <kubectl-args...>" >&2
+  exit 1
+fi
+
+cache_dir="/kd/work"
+cache_file="${cache_dir}/run-env-namespace"
+
+if [[ -f "${cache_file}" ]]; then
+  ns=$(cat "${cache_file}")
+else
+  matches=$(kubectl get ns --no-headers -o custom-columns=NAME:.metadata.name | grep "^run-" | grep -v "^run-platform" || true)
+  count=$(echo "${matches}" | wc -l | tr -d ' ')
+
+  if [[ -z "${matches}" ]]; then
+    echo "ERROR: No namespace starting with 'run-' (excluding run-platform) found" >&2
+    exit 1
+  fi
+
+  if [[ ${count} -gt 1 ]]; then
+    echo "ERROR: Multiple run- namespaces found:" >&2
+    echo "${matches}" | sed 's/^/  /' >&2
+    echo "Cannot determine which one to use" >&2
+    exit 1
+  fi
+
+  mkdir -p "${cache_dir}"
+  echo "${matches}" > "${cache_file}"
+  ns="${matches}"
+fi
+
+exec kubectl -n "${ns}" "$@"

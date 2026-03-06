@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Shorthand for kubectl -n kube-node-lease
+#
+# Usage: k-node-lease <kubectl-args...>
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: k-node-lease <kubectl-args...>" >&2
+  exit 1
+fi
+
+exec kubectl -n kube-node-lease "$@"
