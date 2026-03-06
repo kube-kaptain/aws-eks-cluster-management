@@ -15,6 +15,13 @@ CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 age_file="/kd/secrets/aws-credentials.age"
 errors=0
 
+# CLUSTER_CONFIG must point to a cluster*.yaml file
+config_basename="$(basename "${CLUSTER_CONFIG}")"
+if [[ "${config_basename}" != cluster*.yaml ]]; then
+  echo "FAIL: CLUSTER_CONFIG must point to a cluster*.yaml file (got: ${CLUSTER_CONFIG})"
+  exit 1
+fi
+
 # cluster.yaml must exist
 if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
   echo "FAIL: ${CLUSTER_CONFIG} not found"
