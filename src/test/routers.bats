@@ -20,6 +20,7 @@ setup() {
   create_stub "cluster-create"
   create_stub "cluster-list"
   create_stub "cluster-delete"
+  create_stub "cluster-set"
 
   # Sub-router stubs
   create_stub "cluster-create-cluster"
@@ -39,6 +40,9 @@ setup() {
   create_stub "cluster-drain-nodegroup"
   create_stub "cluster-locksize-nodegroup"
   create_stub "cluster-locksize-old-nodegroups"
+  create_stub "cluster-set-nodegroup-min"
+  create_stub "cluster-set-nodegroup-max"
+  create_stub "cluster-set-nodegroup-desired"
   create_stub "cluster-describe-stacks"
   create_stub "cluster-document-creation"
   create_stub "cluster-document-maintenance"
@@ -209,6 +213,26 @@ run_router() {
 
 @test "cluster-locksize: unknown noun exits 1 with error" {
   run run_router "cluster-locksize" nonexistent
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+# --- set router ---
+
+@test "cluster-set: no args exits 1 with usage" {
+  run run_router "cluster-set"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-set: help exits 0 with usage" {
+  run run_router "cluster-set" help
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-set: unknown noun exits 1 with error" {
+  run run_router "cluster-set" nonexistent
   [[ "${status}" -eq 1 ]]
   [[ "${output}" == *"Unknown"* ]]
 }
