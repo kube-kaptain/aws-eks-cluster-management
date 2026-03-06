@@ -13,11 +13,20 @@ set -euo pipefail
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 
-dry_run=""
-if [[ "${1:-}" == "--dry-run" ]]; then
-  dry_run="--dry-run"
-  shift
-fi
+approve="--approve"
+case "${1:-}" in
+  --dry-run)
+    approve=""
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster create [--dry-run]" >&2
+    exit 1
+    ;;
+esac
 
 # Full set of configuration as we want the final cluster to look
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
@@ -45,22 +54,26 @@ if [[ -f "${CLUSTER_CONTROLPLANE_ONLY_CONFIG}" ]]; then
   echo ""
 
   echo "Stage 1: Creating control plane without node groups..."
-  eksctl create cluster -f "${CLUSTER_CONTROLPLANE_ONLY_CONFIG}" ${dry_run:---approve}
+  eksctl create cluster -f "${CLUSTER_CONTROLPLANE_ONLY_CONFIG}" ${approve}
 
   echo ""
   echo "Stage 2: Bootstrapping Cilium..."
-  "${CLUSTER_SCRIPT_DIR}/cluster-bootstrap-cilium" ${dry_run}
+  if [[ -z "${approve}" ]]; then
+    "${CLUSTER_SCRIPT_DIR}/cluster-bootstrap-cilium" --dry-run
+  else
+    "${CLUSTER_SCRIPT_DIR}/cluster-bootstrap-cilium"
+  fi
 
   echo ""
   echo "Stage 3: Upgrading to full cluster config..."
-  eksctl upgrade cluster -f "${CLUSTER_CONFIG}" ${dry_run:---approve}
+  eksctl upgrade cluster -f "${CLUSTER_CONFIG}" ${approve}
 else
   echo "Creating cluster ${cluster_name}..."
-  eksctl create cluster -f "${CLUSTER_CONFIG}" ${dry_run:---approve}
+  eksctl create cluster -f "${CLUSTER_CONFIG}" ${approve}
 fi
 
 echo ""
-if [[ -n "${dry_run}" ]]; then
+if [[ -z "${approve}" ]]; then
   echo "Dry run complete. No changes were made."
 else
   echo "Cluster ${cluster_name} created successfully."
