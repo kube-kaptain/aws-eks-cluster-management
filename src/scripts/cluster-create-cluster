@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Create an EKS cluster using eksctl
+#
+# If /kd/eks/cluster-controlplane-only.yaml exists, creates control plane first,
+# bootstraps Cilium, then upgrades to the full cluster config.
+# Otherwise creates the full cluster from /kd/eks/cluster.yaml in one step.
+#
+# Usage: cluster create cluster [--dry-run]
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+approve="--approve"
+case "${1:-}" in
+  --dry-run)
+    approve=""
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster create cluster [--dry-run]" >&2
+    exit 1
+    ;;
+esac
+
+# Full set of configuration as we want the final cluster to look
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+# This won't have kube-proxy if it's a cilium based cluster
+
+# Partial and modified set - with managed kube-proxy addon and no node groups
+CLUSTER_CONTROLPLANE_ONLY_CONFIG="${CLUSTER_CONTROLPLANE_ONLY_CONFIG:?CLUSTER_CONTROLPLANE_ONLY_CONFIG must be set}"
+# Managed addon(s) so they can be removed explicitly
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+# Check if cluster already exists
+if eksctl get cluster --name "${cluster_name}" > /dev/null 2>&1; then
+  echo "ERROR: Cluster ${cluster_name} already exists" >&2
+  exit 1
+fi
+
+if [[ -f "${CLUSTER_CONTROLPLANE_ONLY_CONFIG}" ]]; then
+  echo "Control-plane-only config found, using three-stage creation with Cilium bootstrap..."
+  echo ""
+
+  echo "Stage 1: Creating control plane without node groups..."
+  eksctl create cluster -f "${CLUSTER_CONTROLPLANE_ONLY_CONFIG}" ${approve}
+
+  echo ""
+  echo "Stage 2: Bootstrapping Cilium..."
+  if [[ -z "${approve}" ]]; then
+    "${CLUSTER_SCRIPT_DIR}/cluster-bootstrap-cilium" --dry-run
+  else
+    "${CLUSTER_SCRIPT_DIR}/cluster-bootstrap-cilium"
+  fi
+
+  echo ""
+  echo "Stage 3: Upgrading to full cluster config..."
+  eksctl upgrade cluster -f "${CLUSTER_CONFIG}" ${approve}
+else
+  echo "Creating cluster ${cluster_name}..."
+  eksctl create cluster -f "${CLUSTER_CONFIG}" ${approve}
+fi
+
+echo ""
+if [[ -z "${approve}" ]]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Cluster ${cluster_name} created successfully."
+fi
