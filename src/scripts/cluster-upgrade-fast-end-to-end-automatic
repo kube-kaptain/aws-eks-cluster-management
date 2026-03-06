@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Automated end-to-end cluster upgrade - fast path
+#
+# Performs the full upgrade sequence without manual verification steps.
+# Only use this if your workloads are resilient (multiple replicas, PDBs,
+# all three probes, termination grace period, graceful shutdown, and more).
+# Singletons and fragile misconfigured workloads will experience downtime.
+#
+# Usage: cluster upgrade fast-end-to-end-automatic
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster upgrade fast-end-to-end-automatic" >&2
+  exit 1
+fi
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+configured_version=$(yq '.metadata.version' "${CLUSTER_CONFIG}")
+existing_version=$(eksctl get cluster --name "${cluster_name}" -o yaml | yq '.[0].Version')
+
+print_banner() {
+  local title="$1"
+  local inner_width=74
+  local text_len=${#title}
+  local pad_left=$(( (inner_width - text_len) / 2 ))
+  local pad_right=$(( inner_width - text_len - pad_left ))
+
+  echo ""
+  echo ""
+  echo "################################################################################"
+  printf "###%74s###\n" ""
+  printf "###%*s%s%*s###\n" "${pad_left}" "" "${title}" "${pad_right}" ""
+  printf "###%74s###\n" ""
+  echo "################################################################################"
+  echo ""
+}
+
+print_banner "Step 1: Validating requirements"
+"${CLUSTER_SCRIPT_DIR}/cluster-validate-image"
+echo ""
+echo "Checking AWS identity..."
+aws sts get-caller-identity
+echo ""
+echo "Checking Kubernetes access..."
+if kubectl get ns > /dev/null 2>&1; then
+  echo "Okay."
+else
+  echo "Fail."
+  exit 1
+fi
+
+print_banner "Step 2: Confirmation"
+echo "Cluster: ${cluster_name}"
+echo ""
+echo "Before you upgrade you should ensure that every component in your cluster"
+echo "is up-to-date and compatible with the version you're upgrading to."
+echo ""
+echo "This will upgrade the control plane, addons, and replace all nodegroups."
+echo "Workloads will be drained from old nodegroups and the old nodegroups deleted."
+echo ""
+echo "To confirm, type the Kubernetes version you're expecting to upgrade to:"
+read -r entered_version
+
+if [[ "${entered_version}" != "${configured_version}" ]]; then
+  echo "ERROR: '${entered_version}' does not match target version '${configured_version}'" >&2
+  exit 1
+fi
+
+print_banner "Step 3: Capturing before state"
+mkdir -p /kd/work/cluster-upgrade-fast-end-to-end-automatic
+"${CLUSTER_SCRIPT_DIR}/cluster-list-all" | tee /kd/work/cluster-upgrade-fast-end-to-end-automatic/before
+
+print_banner "Step 4: Upgrading addons to latest for ${existing_version}"
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-addons"
+
+print_banner "Step 5: Upgrading control plane to ${configured_version}"
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-controlplane"
+
+print_banner "Step 6: Upgrading addons to match ${configured_version}"
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-addons"
+
+print_banner "Step 7: Creating new nodegroups for ${configured_version}"
+"${CLUSTER_SCRIPT_DIR}/cluster-create-nodegroups"
+
+print_banner "Step 8: Locking old nodegroup sizes"
+"${CLUSTER_SCRIPT_DIR}/cluster-locksize-oldnodegroups"
+
+print_banner "Step 9: Cordoning old nodegroups"
+"${CLUSTER_SCRIPT_DIR}/cluster-cordon-oldnodegroups"
+
+print_banner "Step 10: Draining old nodegroups"
+"${CLUSTER_SCRIPT_DIR}/cluster-drain-oldnodegroups"
+
+print_banner "Step 11: Deleting old nodegroups"
+"${CLUSTER_SCRIPT_DIR}/cluster-delete-oldnodegroups"
+
+print_banner "Step 12: Capturing after state"
+"${CLUSTER_SCRIPT_DIR}/cluster-list-all" | tee /kd/work/cluster-upgrade-fast-end-to-end-automatic/after
+
+print_banner "Step 13: Automated upgrade complete"
+echo "Before and after state captured in /kd/work/cluster-upgrade-fast-end-to-end-automatic/"
+echo ""
+echo "Next: upgrade other components within the cluster to match."
