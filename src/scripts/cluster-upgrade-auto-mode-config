@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Reconcile EKS auto mode config to match cluster.yaml
+#
+# Useful after control plane upgrades which can silently enable auto mode
+# even when autoModeConfig.enabled is set to false in cluster.yaml.
+#
+# Usage: cluster upgrade auto-mode-config
+set -euo pipefail
+
+if [[ $# -gt 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster upgrade auto-mode-config" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Reconciling auto mode config for ${cluster_name}..."
+eksctl update auto-mode-config -f "${CLUSTER_CONFIG}"
+
+echo ""
+echo "Auto mode config for ${cluster_name} reconciled to match ${CLUSTER_CONFIG}."

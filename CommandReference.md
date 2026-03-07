@@ -51,21 +51,22 @@ router without arguments to see its available sub-commands.
 
 ### list
 
-| Command                                   | Description                                                                |
-|-------------------------------------------|----------------------------------------------------------------------------|
-| `cluster list all`                        | List everything: clusters, version, nodegroups, addons, nodes, and stacks  |
-| `cluster list clusters`                   | List EKS clusters                                                          |
-| `cluster list version`                    | Show current EKS control plane version and compare with cluster.yaml       |
-| `cluster list nodegroups`                 | List EKS nodegroups                                                        |
-| `cluster list nodes`                      | List Kubernetes nodes                                                      |
-| `cluster list addons`                     | List EKS addons                                                            |
-| `cluster list stacks`                     | List CloudFormation stacks managed by eksctl                               |
-| `cluster list addon-versions`             | List available addon versions and compatible Kubernetes versions           |
-| `cluster list nodegroup-size <name>`      | Show the min, max, and desired size of a nodegroup                         |
-| `cluster list nodes-for-nodegroup <name>` | List nodes belonging to a specific nodegroup                               |
-| `cluster list nodes-for-new-nodegroups`   | List nodes in nodegroups defined in cluster.yaml                           |
-| `cluster list nodes-for-old-nodegroups`   | List nodes in nodegroups not defined in cluster.yaml                       |
-| `cluster list old-nodes-not-cordoned`     | List nodes in old nodegroups that are not yet cordoned                     |
+| Command                                   | Description                                                                   |
+|-------------------------------------------|-------------------------------------------------------------------------------|
+| `cluster list all`                        | List everything: clusters, version, nodegroups, addons, nodes, and stacks     |
+| `cluster list clusters`                   | List EKS clusters                                                             |
+| `cluster list version`                    | Show current EKS control plane version and compare with cluster.yaml          |
+| `cluster list nodegroups`                 | List EKS nodegroups                                                           |
+| `cluster list nodes`                      | List Kubernetes nodes                                                         |
+| `cluster list addons`                     | List EKS addons                                                               |
+| `cluster list stacks`                     | List CloudFormation stacks managed by eksctl                                  |
+| `cluster list all-addons-all-versions`    | List all available addon versions compatible with the current cluster         |
+| `cluster list all-addons-raw-json`        | Raw JSON of all available addon versions compatible with the current cluster  |
+| `cluster list nodegroup-size <name>`      | Show the min, max, and desired size of a nodegroup                            |
+| `cluster list nodes-for-nodegroup <name>` | List nodes belonging to a specific nodegroup                                  |
+| `cluster list nodes-for-new-nodegroups`   | List nodes in nodegroups defined in cluster.yaml                              |
+| `cluster list nodes-for-old-nodegroups`   | List nodes in nodegroups not defined in cluster.yaml                          |
+| `cluster list old-nodes-not-cordoned`     | List nodes in old nodegroups that are not yet cordoned                        |
 
 ### describe
 
@@ -86,12 +87,13 @@ router without arguments to see its available sub-commands.
 
 ### upgrade
 
-| Command                                     | Description                                          |
-|---------------------------------------------|------------------------------------------------------|
-| `cluster upgrade controlplane`              | Upgrade the EKS control plane to match cluster.yaml  |
-| `cluster upgrade addon <name>`              | Upgrade a single EKS addon                           |
-| `cluster upgrade addons`                    | Upgrade all EKS addons as defined in cluster.yaml    |
-| `cluster upgrade fast-end-to-end-automatic` | Automated end-to-end cluster upgrade (fast path)     |
+| Command                                     | Description                                           |
+|---------------------------------------------|-------------------------------------------------------|
+| `cluster upgrade controlplane`              | Upgrade the EKS control plane to match cluster.yaml   |
+| `cluster upgrade addon <name>`              | Upgrade a single EKS addon                            |
+| `cluster upgrade addons`                    | Upgrade all EKS addons as defined in cluster.yaml     |
+| `cluster upgrade auto-mode-config`          | Reconcile EKS auto mode config to match cluster.yaml  |
+| `cluster upgrade fast-end-to-end-automatic` | Automated end-to-end cluster upgrade (fast path)      |
 
 ### cordon
 
