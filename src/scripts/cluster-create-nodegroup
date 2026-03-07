@@ -7,12 +7,12 @@
 # Usage: cluster create nodegroup <nodegroup-name> [--dry-run]
 set -euo pipefail
 
-approve="--approve"
+dry_run=""
 args=()
 for arg in "$@"; do
   case "${arg}" in
     --dry-run)
-      approve=""
+      dry_run="--dry-run"
       ;;
     --*)
       echo "ERROR: Unknown flag '${arg}'" >&2
@@ -59,11 +59,11 @@ fi
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
 echo "Creating nodegroup ${nodegroup_name} on cluster ${cluster_name}..."
-# shellcheck disable=SC2086 # approve must word-split when set, disappear when empty
-eksctl create nodegroup -f "${CLUSTER_CONFIG}" --include="${nodegroup_name}" ${approve}
+# shellcheck disable=SC2086 # dry_run must word-split when set, disappear when empty
+eksctl create nodegroup -f "${CLUSTER_CONFIG}" --include="${nodegroup_name}" ${dry_run}
 
 echo ""
-if [[ -z "${approve}" ]]; then
+if [[ -n "${dry_run}" ]]; then
   echo "Dry run complete. No changes were made."
 else
   echo "Nodegroup ${nodegroup_name} created successfully."
