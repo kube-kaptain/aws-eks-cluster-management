@@ -17,22 +17,40 @@ setup() {
   }
 
   # Top-level router stubs
+  create_stub "cluster-create"
   create_stub "cluster-list"
   create_stub "cluster-delete"
+  create_stub "cluster-set"
 
   # Sub-router stubs
+  create_stub "cluster-create-cluster"
+  create_stub "cluster-create-nodegroup"
+  create_stub "cluster-create-nodegroups"
+  create_stub "cluster-create-addons"
   create_stub "cluster-list-clusters"
   create_stub "cluster-list-nodes"
+  create_stub "cluster-list-nodes-for-nodegroup"
+  create_stub "cluster-list-nodes-for-old-nodegroups"
+  create_stub "cluster-list-nodes-for-new-nodegroups"
   create_stub "cluster-delete-cluster"
   create_stub "cluster-delete-nodegroup"
-  create_stub "cluster-upgrade-cluster"
+  create_stub "cluster-delete-addon"
+  create_stub "cluster-upgrade-controlplane"
   create_stub "cluster-upgrade-addon"
+  create_stub "cluster-upgrade-addons"
+  create_stub "cluster-upgrade-fast-end-to-end-automatic"
   create_stub "cluster-cordon-node"
   create_stub "cluster-cordon-nodegroup"
+  create_stub "cluster-uncordon-node"
+  create_stub "cluster-uncordon-nodegroup"
+  create_stub "cluster-uncordon-old-nodegroups"
   create_stub "cluster-drain-node"
   create_stub "cluster-drain-nodegroup"
   create_stub "cluster-locksize-nodegroup"
-  create_stub "cluster-locksize-oldnodegroups"
+  create_stub "cluster-locksize-old-nodegroups"
+  create_stub "cluster-set-nodegroup-min"
+  create_stub "cluster-set-nodegroup-max"
+  create_stub "cluster-set-nodegroup-desired"
   create_stub "cluster-describe-stacks"
   create_stub "cluster-document-creation"
   create_stub "cluster-document-maintenance"
@@ -63,6 +81,26 @@ run_router() {
 
 @test "cluster: unknown verb exits 1 with error" {
   run run_router "cluster" nonexistent
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+# --- create router ---
+
+@test "cluster-create: no args exits 1 with usage" {
+  run run_router "cluster-create"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-create: help exits 0 with usage" {
+  run run_router "cluster-create" help
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-create: unknown noun exits 1 with error" {
+  run run_router "cluster-create" nonexistent
   [[ "${status}" -eq 1 ]]
   [[ "${output}" == *"Unknown"* ]]
 }
@@ -147,6 +185,26 @@ run_router() {
   [[ "${output}" == *"Unknown"* ]]
 }
 
+# --- uncordon router ---
+
+@test "cluster-uncordon: no args exits 1 with usage" {
+  run run_router "cluster-uncordon"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-uncordon: help exits 0 with usage" {
+  run run_router "cluster-uncordon" help
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-uncordon: unknown noun exits 1 with error" {
+  run run_router "cluster-uncordon" nonexistent
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
 # --- drain router ---
 
 @test "cluster-drain: no args exits 1 with usage" {
@@ -183,6 +241,26 @@ run_router() {
 
 @test "cluster-locksize: unknown noun exits 1 with error" {
   run run_router "cluster-locksize" nonexistent
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+# --- set router ---
+
+@test "cluster-set: no args exits 1 with usage" {
+  run run_router "cluster-set"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-set: help exits 0 with usage" {
+  run run_router "cluster-set" help
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Usage:"* ]]
+}
+
+@test "cluster-set: unknown noun exits 1 with error" {
+  run run_router "cluster-set" nonexistent
   [[ "${status}" -eq 1 ]]
   [[ "${output}" == *"Unknown"* ]]
 }

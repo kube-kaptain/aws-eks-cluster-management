@@ -7,6 +7,12 @@
 # Usage: cluster describe stacks
 set -euo pipefail
 
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster describe stacks" >&2
+  exit 1
+fi
+
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 
 if [[ ! -f "${CLUSTER_CONFIG}" ]]; then

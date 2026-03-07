@@ -5,15 +5,25 @@
 # Drain all nodes in nodegroups that are not defined in cluster.yaml
 # These are typically old nodegroups left over after an upgrade
 #
-# Usage: cluster drain oldnodegroups [--force]
+# Usage: cluster drain old-nodegroups [--force]
 set -euo pipefail
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 
 force=""
-if [[ "${1:-}" == "--force" ]]; then
-  force="--force"
-fi
+case "${1:-}" in
+  --force)
+    force="--force"
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster drain old-nodegroups [--force]" >&2
+    exit 1
+    ;;
+esac
 
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 

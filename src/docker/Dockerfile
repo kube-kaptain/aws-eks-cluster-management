@@ -115,20 +115,23 @@ RUN useradd -u ${KAPTAIN_USER_ID} -g kaptain -d /home/kaptain -s /bin/bash kapta
 RUN chown kaptain:kaptain /home/kaptain /kd/work
 # Final use downstream image should set USER for immutability in use
 
-# Give the user immediate context
-ENV PS1="cluster:\$(yq eval '.metadata.name // \"NOT_CONFIGURED\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NOT_CONFIGURED')\$ "
+# Shell init and completion files
+RUN mkdir -p /usr/local/share/kaptain
+COPY cluster-completion.bash /usr/local/share/kaptain/
+COPY bash-init.bash /usr/local/share/kaptain/
+COPY sh-init.sh /usr/local/share/kaptain/
 
-# Make the UX nicer by providing bash completion for the command set
-COPY cluster-completion.bash /home/kaptain/
+# Cluster-aware prompt defined once, applied by both shell init scripts
+ENV KAPTAIN_PS1="cluster:\$(yq eval '.metadata.name // \"NOT_CONFIGURED\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NOT_CONFIGURED')@\$(yq eval '.metadata.version // \"NO_VERSION\"' ${CLUSTER_CONFIG} 2>/dev/null || echo 'NO_VERSION')\$ "
 
-# Configure login behaviour for all shells
-RUN echo 'source /home/kaptain/cluster-completion.bash' >> /etc/bash.bashrc
-RUN echo "${CLUSTER_SCRIPT_DIR}/cluster-welcome" >> /etc/bash.bashrc
-RUN rm -f /root/.bashrc /root/.profile
-RUN ln -s /etc/profile /root/.profile
-RUN ln -s /etc/bash.bashrc /root/.bashrc
-RUN ln -s /etc/profile /home/kaptain/.profile
-RUN ln -s /etc/bash.bashrc /home/kaptain/.bashrc
+# sh/dash init: sourced via ENV variable for interactive sessions
+ENV ENV=/usr/local/share/kaptain/sh-init.sh
+
+# bash init - applied to both possible users
+RUN rm -f /root/.profile
+RUN printf 'source /usr/local/share/kaptain/bash-init.bash\n' > /root/.bashrc
+RUN printf 'source /usr/local/share/kaptain/bash-init.bash\n' > /home/kaptain/.bashrc
+RUN chown kaptain:kaptain /home/kaptain/.bashrc
 
 # Pull all aggregated scripts together into our path
 COPY scripts/* /kd/bin/

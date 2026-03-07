@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Show the min, max, and desired size of a nodegroup
+#
+# Usage: cluster list nodegroup-size <nodegroup-name>
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: cluster list nodegroup-size <nodegroup-name>" >&2
+  exit 1
+fi
+
+nodegroup_name="$1"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+raw=$(eksctl get nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" -o yaml)
+
+min_size=$(echo "${raw}" | yq '.[0].MinSize')
+max_size=$(echo "${raw}" | yq '.[0].MaxSize')
+desired=$(echo "${raw}" | yq '.[0].DesiredCapacity')
+
+echo "Nodegroup: ${nodegroup_name}"
+echo "  Min:     ${min_size}"
+echo "  Max:     ${max_size}"
+echo "  Desired: ${desired}"

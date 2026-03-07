@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Set the desired size of a nodegroup
+#
+# Usage: cluster set nodegroup-desired <nodegroup-name> <value>
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: cluster set nodegroup-desired <nodegroup-name> <value>" >&2
+  exit 1
+fi
+
+nodegroup_name="$1"
+desired_size="$2"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Setting nodegroup ${nodegroup_name} desiredSize to ${desired_size}..."
+aws eks update-nodegroup-config \
+  --cluster-name "${cluster_name}" \
+  --nodegroup-name "${nodegroup_name}" \
+  --scaling-config "desiredSize=${desired_size}"
+echo "Done."

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Uncordon router - delegates to cluster-uncordon-<noun> scripts
+#
+# Usage: cluster uncordon <noun> [args...]
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+usage() {
+  echo "Usage: cluster uncordon <noun> [args...]"
+  echo ""
+  echo "Available nouns:"
+  for script in "${CLUSTER_SCRIPT_DIR}"/cluster-uncordon-*; do
+    if [[ -x "${script}" ]]; then
+      noun="$(basename "${script}")"
+      noun="${noun#cluster-uncordon-}"
+      echo "  ${noun}"
+    fi
+  done
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+noun="$1"
+shift
+
+case "${noun}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  *)
+    noun_script="${CLUSTER_SCRIPT_DIR}/cluster-uncordon-${noun}"
+    if [[ -x "${noun_script}" ]]; then
+      exec "${noun_script}" "$@"
+    else
+      echo "ERROR: Unknown uncordon noun '${noun}'" >&2
+      echo "" >&2
+      usage >&2
+      exit 1
+    fi
+    ;;
+esac

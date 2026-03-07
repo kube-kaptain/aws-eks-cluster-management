@@ -2,11 +2,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
-# Lock the size of all nodegroups not defined in cluster.yaml
+# Delete all nodegroups that are not defined in cluster.yaml
 # These are typically old nodegroups left over after an upgrade
 #
-# Usage: cluster locksize oldnodegroups
+# Usage: cluster delete old-nodegroups
 set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster delete old-nodegroups" >&2
+  exit 1
+fi
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 
@@ -29,7 +35,7 @@ old_count=0
 for ng in ${live_nodegroups}; do
   if ! echo "${configured_nodegroups}" | grep -qx "${ng}"; then
     echo "Old nodegroup found: ${ng}"
-    "${CLUSTER_SCRIPT_DIR}/cluster-locksize-nodegroup" "${ng}"
+    "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
     old_count=$((old_count + 1))
     echo ""
   fi
@@ -38,5 +44,5 @@ done
 if [[ ${old_count} -eq 0 ]]; then
   echo "No old nodegroups found."
 else
-  echo "Locked size of ${old_count} old nodegroup(s)."
+  echo "Deleted ${old_count} old nodegroup(s)."
 fi

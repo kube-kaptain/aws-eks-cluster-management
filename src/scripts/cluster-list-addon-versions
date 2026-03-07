@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List available addon versions and their compatible Kubernetes versions
+#
+# Usage: cluster list addon-versions
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster list addon-versions" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+raw=$(eksctl utils describe-addon-versions --cluster "${cluster_name}" -o json)
+
+addon_count=$(echo "${raw}" | yq '.Addons | length')
+
+if [[ ${addon_count} -eq 0 ]]; then
+  echo "No addons available."
+  exit 0
+fi
+
+for ((a = 0; a < addon_count; a++)); do
+  addon_name=$(echo "${raw}" | yq ".Addons[${a}].AddonName")
+  echo "${addon_name}:"
+
+  version_count=$(echo "${raw}" | yq ".Addons[${a}].AddonVersions | length")
+
+  for ((v = 0; v < version_count; v++)); do
+    version=$(echo "${raw}" | yq ".Addons[${a}].AddonVersions[${v}].AddonVersion")
+
+    compat_versions=$(echo "${raw}" | yq "[.Addons[${a}].AddonVersions[${v}].Compatibilities[].ClusterVersion] | join(\", \")")
+
+    echo "  ${version}:"
+    echo "    Compatible Kubernetes Versions: ${compat_versions}"
+  done
+
+  echo ""
+done

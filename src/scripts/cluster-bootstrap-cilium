@@ -7,5 +7,18 @@
 # Usage: cluster bootstrap cilium [--dry-run]
 set -euo pipefail
 
+case "${1:-}" in
+  --dry-run)
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster-bootstrap-cilium [--dry-run]" >&2
+    exit 1
+    ;;
+esac
+
 echo "TODO: Cilium bootstrap not available yet."
 exit 1

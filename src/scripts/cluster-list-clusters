@@ -5,4 +5,10 @@
 # List EKS clusters
 set -euo pipefail
 
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster list clusters" >&2
+  exit 1
+fi
+
 eksctl get clusters

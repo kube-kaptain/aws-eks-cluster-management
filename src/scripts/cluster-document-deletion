@@ -7,6 +7,12 @@
 # Usage: cluster document deletion
 set -euo pipefail
 
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster document deletion" >&2
+  exit 1
+fi
+
 cat <<'EOF'
 To delete a cluster for DR testing or other reasons, just:
 

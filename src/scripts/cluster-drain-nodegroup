@@ -12,14 +12,28 @@ CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 force=""
 args=()
 for arg in "$@"; do
-  if [[ "${arg}" == "--force" ]]; then
-    force="--force"
-  else
-    args+=("${arg}")
-  fi
+  case "${arg}" in
+    --force)
+      force="--force"
+      ;;
+    --*)
+      echo "ERROR: Unknown flag '${arg}'" >&2
+      echo "Usage: cluster drain nodegroup <nodegroup-name> [--force]" >&2
+      exit 1
+      ;;
+    *)
+      args+=("${arg}")
+      ;;
+  esac
 done
 
 if [[ ${#args[@]} -lt 1 ]]; then
+  echo "Usage: cluster drain nodegroup <nodegroup-name> [--force]" >&2
+  exit 1
+fi
+
+if [[ ${#args[@]} -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
   echo "Usage: cluster drain nodegroup <nodegroup-name> [--force]" >&2
   exit 1
 fi

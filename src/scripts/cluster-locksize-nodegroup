@@ -12,6 +12,12 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
+  echo "Usage: cluster locksize nodegroup <nodegroup-name>" >&2
+  exit 1
+fi
+
 nodegroup_name="$1"
 
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"

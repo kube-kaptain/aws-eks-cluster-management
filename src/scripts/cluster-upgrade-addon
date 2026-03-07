@@ -10,11 +10,19 @@ set -euo pipefail
 force=""
 args=()
 for arg in "$@"; do
-  if [[ "${arg}" == "--force" ]]; then
-    force="--force"
-  else
-    args+=("${arg}")
-  fi
+  case "${arg}" in
+    --force)
+      force="--force"
+      ;;
+    --*)
+      echo "ERROR: Unknown flag '${arg}'" >&2
+      echo "Usage: cluster upgrade addon <addon-name> [target-version] [--force]" >&2
+      exit 1
+      ;;
+    *)
+      args+=("${arg}")
+      ;;
+  esac
 done
 
 if [[ ${#args[@]} -lt 1 || ${#args[@]} -gt 2 ]]; then
@@ -33,13 +41,13 @@ fi
 
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
-version_flag=""
 if [[ ${#args[@]} -eq 2 ]]; then
-  version_flag="--version ${args[1]}"
-  echo "Upgrading addon ${addon_name} to ${args[1]} on cluster ${cluster_name}..."
+  version="${args[1]}"
 else
-  echo "Upgrading addon ${addon_name} to latest on cluster ${cluster_name}..."
+  version="latest"
 fi
 
-# shellcheck disable=SC2086 # version_flag and force must word-split when set, disappear when empty
-eksctl update addon --cluster "${cluster_name}" --name "${addon_name}" ${version_flag} ${force}
+echo "Upgrading addon ${addon_name} to ${version} on cluster ${cluster_name}..."
+
+# shellcheck disable=SC2086 # force must word-split when set, disappear when empty
+eksctl update addon --cluster "${cluster_name}" --name "${addon_name}" --version "${version}" ${force}

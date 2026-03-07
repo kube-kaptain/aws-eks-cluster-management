@@ -5,13 +5,38 @@
 # Validate the final built image has everything it needs to operate
 set -euo pipefail
 
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster validate-image" >&2
+  exit 1
+fi
+
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 age_file="/kd/secrets/aws-credentials.age"
 errors=0
 
+# CLUSTER_CONFIG must point to a cluster*.yaml file
+config_basename="$(basename "${CLUSTER_CONFIG}")"
+if [[ "${config_basename}" != cluster*.yaml ]]; then
+  echo "FAIL: CLUSTER_CONFIG must point to a cluster*.yaml file (got: ${CLUSTER_CONFIG})"
+  exit 1
+fi
+
 # cluster.yaml must exist
 if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
   echo "FAIL: ${CLUSTER_CONFIG} not found"
+  exit 1
+fi
+
+# Must not be empty
+if [[ ! -s "${CLUSTER_CONFIG}" ]]; then
+  echo "FAIL: ${CLUSTER_CONFIG} is empty"
+  exit 1
+fi
+
+# Must be valid YAML
+if ! yq '.' "${CLUSTER_CONFIG}" > /dev/null 2>&1; then
+  echo "FAIL: ${CLUSTER_CONFIG} is not valid YAML"
   exit 1
 fi
 
@@ -29,16 +54,21 @@ if [[ -z "${region}" ]]; then
   errors=$((errors + 1))
 fi
 
-# addons must not pin versions
-addon_count=$(yq '.addons | length' "${CLUSTER_CONFIG}")
-for i in $(seq 0 $((addon_count - 1))); do
-  addon_name=$(yq ".addons[${i}].name" "${CLUSTER_CONFIG}")
-  addon_version=$(yq ".addons[${i}].version // \"\"" "${CLUSTER_CONFIG}")
-  if [[ -n "${addon_version}" ]]; then
-    echo "FAIL: addon ${addon_name} has pinned version ${addon_version} - remove it"
-    errors=$((errors + 1))
-  fi
-done
+# addon versions must be "latest" (resolved at deploy time)
+addon_count=$(yq '.addons | length // 0' "${CLUSTER_CONFIG}")
+if [[ ${addon_count} -gt 0 ]]; then
+  for i in $(seq 0 $((addon_count - 1))); do
+    addon_name=$(yq ".addons[${i}].name" "${CLUSTER_CONFIG}")
+    addon_version=$(yq ".addons[${i}].version // \"\"" "${CLUSTER_CONFIG}")
+    if [[ -z "${addon_version}" ]]; then
+      echo "FAIL: addon ${addon_name} version not set - must be 'latest'"
+      errors=$((errors + 1))
+    elif [[ "${addon_version}" != "latest" ]]; then
+      echo "FAIL: addon ${addon_name} version must be 'latest' (got: '${addon_version}')"
+      errors=$((errors + 1))
+    fi
+  done
+fi
 
 # age file is optional but warn if missing
 if [[ ! -f "${age_file}" ]]; then

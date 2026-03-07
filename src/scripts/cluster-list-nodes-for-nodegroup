@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List Kubernetes nodes belonging to a specific nodegroup
+#
+# Usage: cluster list nodes-for-nodegroup <nodegroup-name>
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: cluster list nodes-for-nodegroup <nodegroup-name>" >&2
+  exit 1
+fi
+
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
+  echo "Usage: cluster list nodes-for-nodegroup <nodegroup-name>" >&2
+  exit 1
+fi
+
+nodegroup_name="$1"
+
+kubectl get nodes -l "eks.amazonaws.com/nodegroup=${nodegroup_name}"

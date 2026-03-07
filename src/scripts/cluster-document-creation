@@ -7,6 +7,12 @@
 # Usage: cluster document creation
 set -euo pipefail
 
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster document creation" >&2
+  exit 1
+fi
+
 cat <<'EOF'
 To create a new cluster just:
 

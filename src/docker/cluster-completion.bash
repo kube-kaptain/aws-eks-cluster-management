@@ -7,29 +7,34 @@
 # Scans CLUSTER_SCRIPT_DIR for scripts matching the cluster-* naming convention
 # and provides tab completion that understands the routing hierarchy.
 #
-# Example:
-#   cluster <tab>        → list, create, delete, credentials, upgrade
-#   cluster list <tab>   → all, clusters, nodes, nodegroups, addons, version
-#   cluster list no<tab> → nodes, nodegroups
+# At the top level, only short segments (router names) are offered to keep
+# the list manageable.  At deeper levels, when a script exists for the short
+# segment, both the short and the full remainder are offered so that longer
+# leaf names are discoverable alongside the router.
+# When no script exists for the first segment, only the full remainder is shown
+# to avoid offering non-existent intermediate commands.
 #
+# Example:
+#   cluster <tab>             → list, create, delete, setup-credentials, upgrade
+#   cluster list <tab>        → all, clusters, nodes, nodes-for-nodegroup, ...
+#   cluster list no<tab>      → nodes, nodes-for-nodegroup, nodegroups, ...
+#   cluster setup<tab>        → setup-credentials (no cluster-setup script exists)
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:-/kd/bin}"
 
 _cluster_completions() {
   local cmd="${1}"
   local cur="${2}"
-  local prev="${3}"
 
   # Build prefix from command name + all completed args joined with hyphens
   # e.g., "cluster" with args ["list"] → prefix "cluster-list"
-  # e.g., "cluster" with args ["list", "node"] would not happen (list-node not typed yet)
   local prefix="${cmd}"
   local i
   for ((i = 1; i < COMP_CWORD; i++)); do
     prefix="${prefix}-${COMP_WORDS[i]}"
   done
 
-  # Find all files matching prefix-* and extract the next segment
+  # Find all files matching prefix-* and extract completions
   local completions=()
   local seen=()
   local file segment
@@ -40,22 +45,47 @@ _cluster_completions() {
     local remainder="${file#"${prefix}-"}"
     # Extract first segment (up to next hyphen, or the whole thing)
     segment="${remainder%%-*}"
-    # Deduplicate
-    local already=false
-    local s
-    for s in "${seen[@]+"${seen[@]}"}"; do
-      if [[ "${s}" == "${segment}" ]]; then
-        already=true
-        break
+
+    # Build list of candidates to add
+    local candidates=()
+
+    if [[ "${segment}" == "${remainder}" ]]; then
+      # Single segment, no ambiguity
+      candidates+=("${remainder}")
+    elif [[ -x "${CLUSTER_SCRIPT_DIR}/${prefix}-${segment}" ]]; then
+      # Script exists for short segment
+      if [[ ${COMP_CWORD} -ge 2 ]]; then
+        # Deeper levels — offer both short and full so longer leaves
+        # are discoverable alongside the router
+        candidates+=("${segment}" "${remainder}")
+      else
+        # Top level — just offer the short segment to keep it clean
+        candidates+=("${segment}")
+      fi
+    else
+      # No script for short segment — only offer the full remainder
+      candidates+=("${remainder}")
+    fi
+
+    # Deduplicate and add
+    local candidate
+    for candidate in "${candidates[@]}"; do
+      local already=false
+      local s
+      for s in "${seen[@]+"${seen[@]}"}"; do
+        if [[ "${s}" == "${candidate}" ]]; then
+          already=true
+          break
+        fi
+      done
+      if [[ "${already}" == "false" ]]; then
+        seen+=("${candidate}")
+        completions+=("${candidate}")
       fi
     done
-    if [[ "${already}" == "false" ]]; then
-      seen+=("${segment}")
-      completions+=("${segment}")
-    fi
   done
 
-  COMPREPLY=($(compgen -W "${completions[*]}" -- "${cur}"))
+  COMPREPLY=($(compgen -W "${completions[*]}" -- "${cur}" 2>/dev/null)) || true
 }
 
 complete -F _cluster_completions cluster

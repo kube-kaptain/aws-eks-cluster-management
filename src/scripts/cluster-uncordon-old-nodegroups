@@ -2,11 +2,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
-# Delete all nodegroups that are not defined in cluster.yaml
+# Uncordon all nodes in nodegroups that are not defined in cluster.yaml
 # These are typically old nodegroups left over after an upgrade
 #
-# Usage: cluster delete oldnodegroups
+# Usage: cluster uncordon old-nodegroups
 set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster uncordon old-nodegroups" >&2
+  exit 1
+fi
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 
@@ -23,13 +29,13 @@ cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 configured_nodegroups=$(yq '.managedNodeGroups[].name // .nodeGroups[].name' "${CLUSTER_CONFIG}" 2>/dev/null || true)
 
 # Get nodegroup names currently on the cluster
-live_nodegroups=$(eksctl get nodegroups --cluster "${cluster_name}" -o yaml | yq '.[].Name')
+live_nodegroups=$(eksctl get nodegroups --cluster "${cluster_name}" -o json | yq '.[].Name')
 
 old_count=0
 for ng in ${live_nodegroups}; do
   if ! echo "${configured_nodegroups}" | grep -qx "${ng}"; then
     echo "Old nodegroup found: ${ng}"
-    "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
+    "${CLUSTER_SCRIPT_DIR}/cluster-uncordon-nodegroup" "${ng}"
     old_count=$((old_count + 1))
     echo ""
   fi
@@ -38,5 +44,5 @@ done
 if [[ ${old_count} -eq 0 ]]; then
   echo "No old nodegroups found."
 else
-  echo "Deleted ${old_count} old nodegroup(s)."
+  echo "Uncordoned ${old_count} old nodegroup(s)."
 fi

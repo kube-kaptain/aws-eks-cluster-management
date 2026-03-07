@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List nodes in old nodegroups that are not yet cordoned
+#
+# Usage: cluster list old-nodes-not-cordoned
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster list old-nodes-not-cordoned" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+# Get nodegroup names defined in cluster.yaml
+configured_nodegroups=$(yq '.managedNodeGroups[].name // .nodeGroups[].name' "${CLUSTER_CONFIG}" 2>/dev/null || true)
+
+# Get nodegroup names currently on the cluster
+live_nodegroups=$(eksctl get nodegroups --cluster "${cluster_name}" -o yaml | yq '.[].Name')
+
+found=0
+for ng in ${live_nodegroups}; do
+  if ! echo "${configured_nodegroups}" | grep -qx "${ng}"; then
+    nodes=$(kubectl get nodes -l "eks.amazonaws.com/nodegroup=${ng}" --field-selector spec.unschedulable!=true -o jsonpath='{.items[*].metadata.name}')
+    if [[ -n "${nodes}" ]]; then
+      for node in ${nodes}; do
+        echo "${node}  (nodegroup: ${ng})"
+        found=$((found + 1))
+      done
+    fi
+  fi
+done
+
+if [[ ${found} -eq 0 ]]; then
+  echo "No uncordoned nodes in old nodegroups."
+fi
