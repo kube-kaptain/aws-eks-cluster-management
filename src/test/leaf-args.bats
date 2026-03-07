@@ -53,8 +53,13 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
-@test "cluster-list-addon-versions: rejects args" {
-  run bash "${SCRIPTS_DIR}/cluster-list-addon-versions" bogus
+@test "cluster-list-all-addons-all-versions: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-list-all-addons-all-versions" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-list-all-addons-raw-json: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-list-all-addons-raw-json" bogus
   [[ "${status}" -eq 1 ]]
 }
 
