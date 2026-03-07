@@ -4,6 +4,10 @@ A comprehensive set of tools for managing EKS clusters on AWS.
 
 For the full list of available commands see the [Command Reference](CommandReference.md).
 
+For why this toolkit is the best approach for managing EKS on AWS and why
+Terraform, OpenTofu and other declarative tools are usually the wrong choice,
+see [Why Not Terraform?](WhyNotTerraform.md).
+
 
 ## Image Contents
 
