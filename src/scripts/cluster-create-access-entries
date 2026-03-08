@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Create all missing EKS access entries defined in cluster.yaml
+#
+# If accessConfig is not defined in cluster.yaml, this is a no-op
+# on the assumption that access is managed elsewhere (eg Terraform).
+# If accessConfig is present but empty, also treated as managed elsewhere.
+#
+# Requires authenticationMode to be API or API_AND_CONFIG_MAP.
+# Entries that already exist are skipped automatically by eksctl.
+#
+# Usage: cluster create access-entries
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster create access-entries" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+has_access_config=$(yq '.accessConfig // ""' "${CLUSTER_CONFIG}")
+if [[ -z "${has_access_config}" || "${has_access_config}" == "null" || "${has_access_config}" == "{}" ]]; then
+  echo "Access config not defined in ${CLUSTER_CONFIG}, skipping (managed elsewhere)."
+  exit 0
+fi
+
+auth_mode=$(yq '.accessConfig.authenticationMode // ""' "${CLUSTER_CONFIG}")
+if [[ "${auth_mode}" != "API" && "${auth_mode}" != "API_AND_CONFIG_MAP" ]]; then
+  echo "Authentication mode is '${auth_mode:-not set}', access entry reconciliation requires API or API_AND_CONFIG_MAP."
+  exit 0
+fi
+
+has_entries=$(yq '.accessConfig.accessEntries // "" | length' "${CLUSTER_CONFIG}")
+if [[ "${has_entries}" -eq 0 ]]; then
+  echo "No access entries defined in ${CLUSTER_CONFIG}, nothing to create."
+  exit 0
+fi
+
+echo "Creating missing access entries on cluster ${cluster_name}..."
+eksctl create accessentry -f "${CLUSTER_CONFIG}"
+echo "All access entries from ${CLUSTER_CONFIG} are now present."

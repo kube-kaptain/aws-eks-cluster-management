@@ -78,6 +78,11 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+@test "cluster-list-access-entries: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-list-access-entries" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
 # --- delete ---
 
 @test "cluster-delete-cluster: rejects args" {
@@ -87,6 +92,11 @@ setup() {
 
 @test "cluster-delete-old-nodegroups: rejects args" {
   run bash "${SCRIPTS_DIR}/cluster-delete-old-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-delete-access-entries: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-access-entries" bogus
   [[ "${status}" -eq 1 ]]
 }
 
@@ -133,6 +143,12 @@ setup() {
   [[ "${output}" == *"Unknown"* ]]
 }
 
+@test "cluster-upgrade-cluster-access: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-cluster-access" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
 # --- other no-arg scripts ---
 
 @test "cluster-upgrade-fast-end-to-end-automatic: rejects args" {
@@ -172,6 +188,11 @@ setup() {
 
 @test "cluster-validate-image: rejects args" {
   run bash "${SCRIPTS_DIR}/cluster-validate-image" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-create-access-entries: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-create-access-entries" bogus
   [[ "${status}" -eq 1 ]]
 }
 
@@ -248,6 +269,17 @@ setup() {
 
 @test "cluster-delete-addon: too many args exits 1" {
   run bash "${SCRIPTS_DIR}/cluster-delete-addon" one two
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-delete-access-entry: no args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-access-entry"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage"* ]]
+}
+
+@test "cluster-delete-access-entry: too many args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-access-entry" one two
   [[ "${status}" -eq 1 ]]
 }
 
@@ -420,6 +452,16 @@ setup() {
 
 @test "cluster-upgrade-addon: no args exits 1" {
   run bash "${SCRIPTS_DIR}/cluster-upgrade-addon"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage"* ]]
+}
+
+# ====================================================================
+# Create access entry: requires principal ARN (extra args pass through)
+# ====================================================================
+
+@test "cluster-create-access-entry: no args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-create-access-entry"
   [[ "${status}" -eq 1 ]]
   [[ "${output}" == *"Usage"* ]]
 }

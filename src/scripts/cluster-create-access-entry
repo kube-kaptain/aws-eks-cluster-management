@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Create a single EKS access entry
+#
+# Usage: cluster create access-entry <principal-arn> [--type TYPE] [--kubernetes-groups GROUPS] [--kubernetes-username USERNAME]
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: cluster create access-entry <principal-arn> [--type TYPE] [--kubernetes-groups GROUPS] [--kubernetes-username USERNAME]" >&2
+  exit 1
+fi
+
+principal_arn="$1"
+shift
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Creating access entry for ${principal_arn} on cluster ${cluster_name}..."
+eksctl create accessentry --cluster "${cluster_name}" --principal-arn "${principal_arn}" "$@"
+echo "Access entry for ${principal_arn} created."

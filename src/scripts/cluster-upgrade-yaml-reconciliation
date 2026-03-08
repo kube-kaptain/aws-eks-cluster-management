@@ -8,6 +8,7 @@
 #   - cluster-auto-mode
 #   - cluster-endpoints
 #   - cluster-logging
+#   - cluster-access
 #
 # Usage: cluster upgrade yaml-reconciliation [--dry-run]
 set -euo pipefail
@@ -39,6 +40,10 @@ echo ""
 
 echo "=== Reconciling control plane logging ==="
 "${CLUSTER_SCRIPT_DIR}/cluster-upgrade-cluster-logging" ${dry_run}
+echo ""
+
+echo "=== Reconciling cluster access ==="
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-cluster-access" ${dry_run}
 echo ""
 
 echo "=== All cluster-level settings reconciled ==="

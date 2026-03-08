@@ -35,16 +35,20 @@ router without arguments to see its available sub-commands.
 | `cluster create nodegroup <name> [--dry-run]` | Create a single EKS nodegroup from cluster.yaml                            |
 | `cluster create nodegroups [--dry-run]`       | Create all EKS nodegroups defined in cluster.yaml                          |
 | `cluster create addons [--force]`             | Create all EKS addons defined in cluster.yaml                              |
+| `cluster create access-entry <arn> [options]` | Create a single EKS access entry                                           |
+| `cluster create access-entries`               | Create all missing access entries defined in cluster.yaml                  |
 | `cluster bootstrap-cilium`                    | Bootstrap Cilium CNI on a newly created EKS cluster. Not yet implemented.  |
 
 ### delete
 
-| Command                           | Description                                          |
-|-----------------------------------|------------------------------------------------------|
-| `cluster delete cluster`          | Delete an EKS cluster with interactive confirmation  |
-| `cluster delete nodegroup <name>` | Delete an EKS nodegroup                              |
-| `cluster delete old-nodegroups`   | Delete all nodegroups not defined in cluster.yaml    |
-| `cluster delete addon <name>`     | Delete an EKS addon                                  |
+| Command                             | Description                                          |
+|-------------------------------------|------------------------------------------------------|
+| `cluster delete cluster`            | Delete an EKS cluster with interactive confirmation  |
+| `cluster delete nodegroup <name>`   | Delete an EKS nodegroup                              |
+| `cluster delete old-nodegroups`     | Delete all nodegroups not defined in cluster.yaml    |
+| `cluster delete addon <name>`       | Delete an EKS addon                                  |
+| `cluster delete access-entry <arn>` | Delete a single EKS access entry                     |
+| `cluster delete access-entries`     | Delete access entries not defined in cluster.yaml    |
 
 
 ## Information
@@ -59,6 +63,7 @@ router without arguments to see its available sub-commands.
 | `cluster list nodegroups`                 | List EKS nodegroups                                                           |
 | `cluster list nodes`                      | List Kubernetes nodes                                                         |
 | `cluster list addons`                     | List EKS addons                                                               |
+| `cluster list access-entries`             | List EKS access entries                                                       |
 | `cluster list stacks`                     | List CloudFormation stacks managed by eksctl                                  |
 | `cluster list all-addons-all-versions`    | List all available addon versions compatible with the current cluster         |
 | `cluster list all-addons-raw-json`        | Raw JSON of all available addon versions compatible with the current cluster  |
@@ -95,6 +100,7 @@ router without arguments to see its available sub-commands.
 | `cluster upgrade cluster-auto-mode`         | Reconcile EKS auto mode toggle to match cluster.yaml            |
 | `cluster upgrade cluster-endpoints`         | Reconcile cluster endpoint access config to match cluster.yaml  |
 | `cluster upgrade cluster-logging`           | Reconcile control plane logging config to match cluster.yaml    |
+| `cluster upgrade cluster-access`            | Reconcile cluster access config to match cluster.yaml           |
 | `cluster upgrade yaml-reconciliation`       | Reconcile all cluster-level settings to match cluster.yaml      |
 | `cluster upgrade fast-end-to-end-automatic` | Automated end-to-end cluster upgrade (fast path)                |
 

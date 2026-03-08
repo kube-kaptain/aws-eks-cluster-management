@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Delete a single EKS access entry
+#
+# Usage: cluster delete access-entry <principal-arn>
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: cluster delete access-entry <principal-arn>" >&2
+  exit 1
+fi
+
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
+  echo "Usage: cluster delete access-entry <principal-arn>" >&2
+  exit 1
+fi
+
+principal_arn="$1"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Deleting access entry ${principal_arn} from cluster ${cluster_name}..."
+eksctl delete accessentry --cluster "${cluster_name}" --principal-arn "${principal_arn}"
+echo "Access entry ${principal_arn} deleted."

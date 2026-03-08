@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List EKS access entries for the cluster defined in cluster.yaml
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster list access-entries" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Access entries for ${cluster_name}:"
+echo ""
+eksctl get accessentry --cluster "${cluster_name}"
+echo ""
+echo "To reconcile with cluster.yaml run 'cluster upgrade cluster-access'."
