@@ -106,8 +106,8 @@ print_banner "Step 10: Draining old nodegroups"
 print_banner "Step 11: Deleting old nodegroups"
 "${CLUSTER_SCRIPT_DIR}/cluster-delete-old-nodegroups"
 
-print_banner "Step 12: Reconciling auto mode config"
-"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-auto-mode-config"
+print_banner "Step 12: Reconciling cluster against cluster.yaml"
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-yaml-reconciliation"
 
 print_banner "Step 13: Capturing after state"
 "${CLUSTER_SCRIPT_DIR}/cluster-list-all" | tee /kd/work/cluster-upgrade-fast-end-to-end-automatic/after

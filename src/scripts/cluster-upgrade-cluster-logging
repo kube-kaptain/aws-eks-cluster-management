@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Reconcile control plane logging configuration to match cluster.yaml
+#
+# Updates cloudWatch.clusterLogging.enableTypes to match the config.
+#
+# Usage: cluster upgrade cluster-logging [--dry-run]
+set -euo pipefail
+
+approve="--approve"
+case "${1:-}" in
+  --dry-run)
+    approve=""
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster upgrade cluster-logging [--dry-run]" >&2
+    exit 1
+    ;;
+esac
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Reconciling control plane logging for ${cluster_name}..."
+eksctl utils update-cluster-logging -f "${CLUSTER_CONFIG}" ${approve}
+
+echo ""
+if [[ -z "${approve}" ]]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Control plane logging for ${cluster_name} reconciled to match ${CLUSTER_CONFIG}."
+fi

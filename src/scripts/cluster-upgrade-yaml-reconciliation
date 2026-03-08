@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Reconcile all cluster-level settings to match cluster.yaml
+#
+# Calls each reconciliation script in turn:
+#   - cluster-auto-mode
+#   - cluster-endpoints
+#   - cluster-logging
+#
+# Usage: cluster upgrade yaml-reconciliation [--dry-run]
+set -euo pipefail
+
+dry_run=""
+case "${1:-}" in
+  --dry-run)
+    dry_run="--dry-run"
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster upgrade yaml-reconciliation [--dry-run]" >&2
+    exit 1
+    ;;
+esac
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+echo "=== Reconciling auto mode toggle ==="
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-cluster-auto-mode" ${dry_run}
+echo ""
+
+echo "=== Reconciling cluster endpoint access ==="
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-cluster-endpoints" ${dry_run}
+echo ""
+
+echo "=== Reconciling control plane logging ==="
+"${CLUSTER_SCRIPT_DIR}/cluster-upgrade-cluster-logging" ${dry_run}
+echo ""
+
+echo "=== All cluster-level settings reconciled ==="

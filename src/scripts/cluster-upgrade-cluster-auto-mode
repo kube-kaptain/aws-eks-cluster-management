@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Reconcile EKS auto mode toggle to match cluster.yaml
+#
+# Useful after control plane upgrades which can silently enable auto mode
+# even when autoModeConfig.enabled is set to false in cluster.yaml.
+#
+# Usage: cluster upgrade cluster-auto-mode [--dry-run]
+set -euo pipefail
+
+dry_run=false
+case "${1:-}" in
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster upgrade cluster-auto-mode [--dry-run]" >&2
+    exit 1
+    ;;
+esac
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+desired=$(yq '.autoModeConfig.enabled // false' "${CLUSTER_CONFIG}")
+live_raw=$(aws eks describe-cluster --name "${cluster_name}" --query 'cluster.computeConfig.enabled' --output text 2>/dev/null) || live_raw="unknown"
+live=$(echo "${live_raw}" | tr '[:upper:]' '[:lower:]')
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run: auto mode for ${cluster_name}"
+  echo "  cluster.yaml: ${desired}"
+  echo "  live cluster: ${live}"
+  if [[ "${desired}" == "${live}" ]]; then
+    echo "  No change needed."
+  else
+    echo "  Would change auto mode from ${live} to ${desired}."
+  fi
+  echo ""
+  echo "Dry run complete. No changes were made."
+else
+  echo "Reconciling auto mode toggle for ${cluster_name}..."
+  eksctl update auto-mode-config -f "${CLUSTER_CONFIG}"
+  echo ""
+  echo "Auto mode toggle for ${cluster_name} reconciled to match ${CLUSTER_CONFIG} i.e. it's now ${desired}"
+fi

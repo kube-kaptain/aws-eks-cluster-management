@@ -107,12 +107,33 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
-# --- other no-arg scripts ---
+# --- other flag scripts (--dry-run) ---
 
-@test "cluster-upgrade-auto-mode-config: rejects args" {
-  run bash "${SCRIPTS_DIR}/cluster-upgrade-auto-mode-config" bogus
+@test "cluster-upgrade-cluster-auto-mode: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-cluster-auto-mode" --bogus
   [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
 }
+
+@test "cluster-upgrade-cluster-endpoints: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-cluster-endpoints" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+@test "cluster-upgrade-cluster-logging: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-cluster-logging" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+@test "cluster-upgrade-yaml-reconciliation: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-yaml-reconciliation" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+# --- other no-arg scripts ---
 
 @test "cluster-upgrade-fast-end-to-end-automatic: rejects args" {
   run bash "${SCRIPTS_DIR}/cluster-upgrade-fast-end-to-end-automatic" bogus

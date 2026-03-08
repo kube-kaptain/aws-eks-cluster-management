@@ -60,7 +60,7 @@ A normal maintenance run looks like this:
 13. Run `cluster drain old-nodegroups` to migrate any remaining workloads
 14. Confirm everything you care about is running and working fine
 15. Run `cluster delete old-nodegroups` to remove the empty unused nodes
-16. Run `cluster upgrade auto-mode-config` to reconcile auto mode to match cluster.yaml
+16. Run `cluster upgrade yaml-reconciliation` to ensure cluster matches cluster.yaml
     WARNING: ensure toggling auto mode won't disrupt your workloads before running
 17. Upgrade other components within the cluster to match
 
