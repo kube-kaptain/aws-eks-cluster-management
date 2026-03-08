@@ -3,6 +3,8 @@
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
 # List everything: clusters, then per-cluster version, nodegroups, addons, nodes, and stacks
+#
+# Usage: cluster list all
 set -euo pipefail
 
 if [[ $# -ne 0 ]]; then

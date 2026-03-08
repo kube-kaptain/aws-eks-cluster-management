@@ -3,6 +3,8 @@
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
 # Show current EKS control plane version and compare with cluster.yaml config
+#
+# Usage: cluster list version
 set -euo pipefail
 
 if [[ $# -ne 0 ]]; then

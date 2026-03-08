@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
-# List EKS nodegroups for the cluster defined in /kd/eks/cluster.yaml
+# List EKS nodegroups for the cluster defined in cluster.yaml
+#
+# Usage: cluster list nodegroups
 set -euo pipefail
 
 if [[ $# -ne 0 ]]; then

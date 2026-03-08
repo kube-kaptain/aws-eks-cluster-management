@@ -3,6 +3,8 @@
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
 # Validate the final built image has everything it needs to operate
+#
+# Usage: cluster validate-image
 set -euo pipefail
 
 if [[ $# -ne 0 ]]; then
