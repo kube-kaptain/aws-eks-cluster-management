@@ -148,11 +148,13 @@ router without arguments to see its available sub-commands.
 
 ## Utilities
 
-| Command                     | Description                                                    |
-|-----------------------------|----------------------------------------------------------------|
-| `cluster validate-image`    | Validate the built image has everything it needs to operate    |
-| `cluster setup-credentials` | Decrypt and set up AWS credentials from an age-encrypted file  |
-| `cluster welcome`           | Welcome message displayed on login to the container            |
+| Command                         | Description                                                    |
+|---------------------------------|----------------------------------------------------------------|
+| `cluster validate-image`        | Validate the built image has everything it needs to operate    |
+| `cluster setup-credentials`     | Decrypt and set up AWS credentials from an age-encrypted file  |
+| `cluster refresh-insights`      | Trigger an on-demand refresh of EKS insights                   |
+| `cluster poll-insights-refresh` | Poll until an EKS insights refresh completes                   |
+| `cluster welcome`               | Welcome message displayed on login to the container            |
 
 
 ## kubectl Shortcuts
