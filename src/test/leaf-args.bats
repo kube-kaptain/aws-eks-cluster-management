@@ -88,6 +88,18 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+# --- insights ---
+
+@test "cluster-refresh-insights: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-refresh-insights" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-poll-insights-refresh: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-poll-insights-refresh" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
 # --- delete ---
 
 @test "cluster-delete-cluster: rejects args" {

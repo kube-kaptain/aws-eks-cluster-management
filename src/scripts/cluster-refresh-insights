@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Trigger an on-demand refresh of EKS insights for the cluster
+#
+# Usage: cluster refresh-insights
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster refresh-insights" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+echo "Refreshing EKS insights for ${cluster_name}..."
+AWS_PAGER="" aws eks start-insights-refresh --cluster-name "${cluster_name}"
+echo ""
+echo "Refresh triggered. Run 'cluster poll-insights-refresh' to wait for completion."
