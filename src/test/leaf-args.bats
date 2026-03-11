@@ -142,6 +142,11 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+@test "cluster-delete-addons: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-addons" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
 @test "cluster-delete-access-entries: rejects args" {
   run bash "${SCRIPTS_DIR}/cluster-delete-access-entries" bogus
   [[ "${status}" -eq 1 ]]
@@ -490,6 +495,23 @@ setup() {
   run bash "${SCRIPTS_DIR}/cluster-create-addons" --bogus
   [[ "${status}" -eq 1 ]]
   [[ "${output}" == *"Unknown"* ]]
+}
+
+@test "cluster-create-addon: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
+@test "cluster-create-addon: no args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage"* ]]
+}
+
+@test "cluster-create-addon: too many args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" one two
+  [[ "${status}" -eq 1 ]]
 }
 
 @test "cluster-create-nodegroup: rejects unknown flag" {

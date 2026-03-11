@@ -35,6 +35,7 @@ router without arguments to see its available sub-commands.
 | `cluster create cluster [--dry-run]`          | Create an EKS cluster using eksctl                                         |
 | `cluster create nodegroup <name> [--dry-run]` | Create a single EKS nodegroup from cluster.yaml                            |
 | `cluster create nodegroups [--dry-run]`       | Create all EKS nodegroups defined in cluster.yaml                          |
+| `cluster create addon <name> [--force]`       | Create a single EKS addon from cluster.yaml                                |
 | `cluster create addons [--force]`             | Create all EKS addons defined in cluster.yaml                              |
 | `cluster create access-entry <arn> [options]` | Create a single EKS access entry                                           |
 | `cluster create access-entries`               | Create all missing access entries defined in cluster.yaml                  |
@@ -49,6 +50,7 @@ router without arguments to see its available sub-commands.
 | `cluster delete old-nodegroups`     | Delete all nodegroups not defined in cluster.yaml    |
 | `cluster delete new-nodegroups`     | Delete all nodegroups defined in cluster.yaml        |
 | `cluster delete addon <name>`       | Delete an EKS addon                                  |
+| `cluster delete addons`             | Delete all addons not defined in cluster.yaml        |
 | `cluster delete access-entry <arn>` | Delete a single EKS access entry                     |
 | `cluster delete access-entries`     | Delete access entries not defined in cluster.yaml    |
 

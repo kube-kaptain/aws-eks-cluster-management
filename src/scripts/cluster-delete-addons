@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Delete all EKS addons not defined in cluster.yaml
+#
+# Usage: cluster delete addons
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster delete addons" >&2
+  exit 1
+fi
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+# Get addon names defined in cluster.yaml
+configured_addons=$(yq -r '.addons[].name // empty' "${CLUSTER_CONFIG}" 2>/dev/null || true)
+
+# Get addon names currently on the cluster
+live_addons=$(eksctl get addons --cluster "${cluster_name}" -o yaml | yq -r '.[].Name')
+
+extra_count=0
+for addon in ${live_addons}; do
+  if ! echo "${configured_addons}" | grep -qx "${addon}"; then
+    echo "Extra addon found: ${addon}"
+    "${CLUSTER_SCRIPT_DIR}/cluster-delete-addon" "${addon}"
+    extra_count=$((extra_count + 1))
+    echo ""
+  fi
+done
+
+if [[ ${extra_count} -eq 0 ]]; then
+  echo "No extra addons found."
+else
+  echo "Deleted ${extra_count} extra addon(s)."
+fi
