@@ -29,13 +29,25 @@ fi
 
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
-current_count=$(eksctl get nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" -o yaml | yq '.[0].DesiredCapacity')
+raw=$(eksctl get nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" -o yaml)
 
-if [[ -z "${current_count}" || "${current_count}" == "null" ]]; then
+current_min=$(echo "${raw}" | yq '.[0].MinSize')
+current_max=$(echo "${raw}" | yq '.[0].MaxSize')
+current_desired=$(echo "${raw}" | yq '.[0].DesiredCapacity')
+
+if [[ -z "${current_desired}" || "${current_desired}" == "null" ]]; then
   echo "ERROR: Could not determine current size of nodegroup ${nodegroup_name}" >&2
   exit 1
 fi
 
-echo "Locking nodegroup ${nodegroup_name} to ${current_count} node(s) (min=${current_count}, max=${current_count})..."
-eksctl scale nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" --nodes "${current_count}" --nodes-min "${current_count}" --nodes-max "${current_count}"
-echo "Nodegroup ${nodegroup_name} locked at ${current_count} node(s)."
+# Save original values so they can be restored by cluster-unlocksize-nodegroup
+save_dir="/kd/work/locksize/${nodegroup_name}"
+mkdir -p "${save_dir}"
+echo "${current_min}" > "${save_dir}/min"
+echo "${current_max}" > "${save_dir}/max"
+echo "${current_desired}" > "${save_dir}/desired"
+echo "Saved original sizes to ${save_dir}/ (min=${current_min}, max=${current_max}, desired=${current_desired})"
+
+echo "Locking nodegroup ${nodegroup_name} to ${current_desired} node(s) (min=${current_desired}, max=${current_desired})..."
+eksctl scale nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" --nodes "${current_desired}" --nodes-min "${current_desired}" --nodes-max "${current_desired}"
+echo "Nodegroup ${nodegroup_name} locked at ${current_desired} node(s)."

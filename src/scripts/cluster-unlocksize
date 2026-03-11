@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Unlocksize router - delegates to cluster-unlocksize-<noun> scripts
+#
+# Usage: cluster unlocksize <noun> [args...]
+set -euo pipefail
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+usage() {
+  echo "Usage: cluster unlocksize <noun> [args...]"
+  echo ""
+  echo "Available nouns:"
+  for script in "${CLUSTER_SCRIPT_DIR}"/cluster-unlocksize-*; do
+    if [[ -x "${script}" ]]; then
+      noun="$(basename "${script}")"
+      noun="${noun#cluster-unlocksize-}"
+      echo "  ${noun}"
+    fi
+  done
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+noun="$1"
+shift
+
+case "${noun}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  *)
+    noun_script="${CLUSTER_SCRIPT_DIR}/cluster-unlocksize-${noun}"
+    if [[ -x "${noun_script}" ]]; then
+      exec "${noun_script}" "$@"
+    else
+      echo "ERROR: Unknown unlocksize noun '${noun}'" >&2
+      echo "" >&2
+      usage >&2
+      exit 1
+    fi
+    ;;
+esac

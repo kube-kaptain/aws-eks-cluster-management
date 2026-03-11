@@ -9,20 +9,21 @@ guides showing how these commands fit together, see the [README](README.md).
 These scripts dispatch to sub-commands based on the first argument. Run any
 router without arguments to see its available sub-commands.
 
-| Script             | Description                                                      |
-|--------------------|------------------------------------------------------------------|
-| `cluster`          | Top-level router, delegates to `cluster-<verb>` scripts          |
-| `cluster-create`   | Create router, delegates to `cluster-create-<noun>` scripts      |
-| `cluster-delete`   | Delete router, delegates to `cluster-delete-<noun>` scripts      |
-| `cluster-list`     | List router, delegates to `cluster-list-<noun>` scripts          |
-| `cluster-upgrade`  | Upgrade router, delegates to `cluster-upgrade-<noun>` scripts    |
-| `cluster-cordon`   | Cordon router, delegates to `cluster-cordon-<noun>` scripts      |
-| `cluster-uncordon` | Uncordon router, delegates to `cluster-uncordon-<noun>` scripts  |
-| `cluster-drain`    | Drain router, delegates to `cluster-drain-<noun>` scripts        |
-| `cluster-locksize` | Locksize router, delegates to `cluster-locksize-<noun>` scripts  |
-| `cluster-set`      | Set router, delegates to `cluster-set-<noun>` scripts            |
-| `cluster-describe` | Describe router, delegates to `cluster-describe-<noun>` scripts  |
-| `cluster-document` | Document router, delegates to `cluster-document-<noun>` scripts  |
+| Script               | Description                                                         |
+|----------------------|---------------------------------------------------------------------|
+| `cluster`            | Top-level router, delegates to `cluster-<verb>` scripts             |
+| `cluster-create`     | Create router, delegates to `cluster-create-<noun>` scripts         |
+| `cluster-delete`     | Delete router, delegates to `cluster-delete-<noun>` scripts         |
+| `cluster-list`       | List router, delegates to `cluster-list-<noun>` scripts             |
+| `cluster-upgrade`    | Upgrade router, delegates to `cluster-upgrade-<noun>` scripts       |
+| `cluster-cordon`     | Cordon router, delegates to `cluster-cordon-<noun>` scripts         |
+| `cluster-uncordon`   | Uncordon router, delegates to `cluster-uncordon-<noun>` scripts     |
+| `cluster-drain`      | Drain router, delegates to `cluster-drain-<noun>` scripts           |
+| `cluster-locksize`   | Locksize router, delegates to `cluster-locksize-<noun>` scripts     |
+| `cluster-unlocksize` | Unlocksize router, delegates to `cluster-unlocksize-<noun>` scripts |
+| `cluster-set`        | Set router, delegates to `cluster-set-<noun>` scripts               |
+| `cluster-describe`   | Describe router, delegates to `cluster-describe-<noun>` scripts     |
+| `cluster-document`   | Document router, delegates to `cluster-document-<noun>` scripts     |
 
 
 ## Cluster Lifecycle
@@ -140,6 +141,13 @@ router without arguments to see its available sub-commands.
 |-------------------------------------|----------------------------------------------------------------|
 | `cluster locksize nodegroup <name>` | Lock a nodegroup size by setting min and max to current count  |
 | `cluster locksize old-nodegroups`   | Lock the size of all nodegroups not defined in cluster.yaml    |
+
+### unlocksize
+
+| Command                               | Description                                                              |
+|---------------------------------------|--------------------------------------------------------------------------|
+| `cluster unlocksize nodegroup <name>` | Restore a nodegroup to its original min/max from before locksize         |
+| `cluster unlocksize old-nodegroups`   | Restore original min/max for all nodegroups not defined in cluster.yaml  |
 
 ### set
 

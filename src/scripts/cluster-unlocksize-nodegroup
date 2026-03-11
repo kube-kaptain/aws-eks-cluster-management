@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Restore a nodegroup to its original min/max from before locksize was run
+#
+# Reads saved values from /kd/work/locksize/<nodegroup-name>/ written by
+# cluster-locksize-nodegroup and restores min and max. Only expands the
+# range — if current min is already below original or current max is
+# already above original, the wider value is kept. Desired is not
+# changed — once min/max are restored the autoscaler can scale as needed.
+#
+# Usage: cluster unlocksize nodegroup <nodegroup-name>
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: cluster unlocksize nodegroup <nodegroup-name>" >&2
+  exit 1
+fi
+
+if [[ $# -gt 1 ]]; then
+  echo "ERROR: Too many arguments" >&2
+  echo "Usage: cluster unlocksize nodegroup <nodegroup-name>" >&2
+  exit 1
+fi
+
+nodegroup_name="$1"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+save_dir="/kd/work/locksize/${nodegroup_name}"
+
+if [[ ! -d "${save_dir}" ]]; then
+  echo "ERROR: No saved locksize data found at ${save_dir}" >&2
+  echo "Was cluster locksize nodegroup run for ${nodegroup_name}?" >&2
+  exit 1
+fi
+
+if [[ ! -f "${save_dir}/min" || ! -f "${save_dir}/max" || ! -f "${save_dir}/desired" ]]; then
+  echo "ERROR: Incomplete locksize data in ${save_dir} (need min, max, and desired)" >&2
+  echo "Use cluster set nodegroup-min/max/desired to restore manually." >&2
+  exit 1
+fi
+
+original_min=$(cat "${save_dir}/min")
+original_max=$(cat "${save_dir}/max")
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+raw=$(eksctl get nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" -o yaml)
+current_min=$(echo "${raw}" | yq '.[0].MinSize')
+current_max=$(echo "${raw}" | yq '.[0].MaxSize')
+
+# Only expand the range — never shrink. If someone tinkered with min/max
+# we don't want to set min higher than current desired or max lower.
+restore_min="${original_min}"
+restore_max="${original_max}"
+
+if [[ ${current_min} -lt ${original_min} ]]; then
+  echo "Current min (${current_min}) is already below original (${original_min}), keeping ${current_min}."
+  restore_min="${current_min}"
+fi
+
+if [[ ${current_max} -gt ${original_max} ]]; then
+  echo "Current max (${current_max}) is already above original (${original_max}), keeping ${current_max}."
+  restore_max="${current_max}"
+fi
+
+echo "Restoring nodegroup ${nodegroup_name} min/max (min=${restore_min}, max=${restore_max})..."
+eksctl scale nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" --nodes-min "${restore_min}" --nodes-max "${restore_max}"
+echo "Nodegroup ${nodegroup_name} restored (min=${restore_min}, max=${restore_max})."

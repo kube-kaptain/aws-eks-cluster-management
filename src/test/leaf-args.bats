@@ -164,6 +164,12 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+@test "cluster-unlocksize-old-nodegroups: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-unlocksize-old-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+
 # --- other flag scripts (--dry-run) ---
 
 @test "cluster-upgrade-cluster-auto-mode: rejects unknown flag" {
@@ -346,6 +352,19 @@ setup() {
 
 @test "cluster-locksize-nodegroup: too many args exits 1" {
   run bash "${SCRIPTS_DIR}/cluster-locksize-nodegroup" one two
+  [[ "${status}" -eq 1 ]]
+}
+
+# --- unlocksize ---
+
+@test "cluster-unlocksize-nodegroup: no args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-unlocksize-nodegroup"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Usage"* ]]
+}
+
+@test "cluster-unlocksize-nodegroup: too many args exits 1" {
+  run bash "${SCRIPTS_DIR}/cluster-unlocksize-nodegroup" one two
   [[ "${status}" -eq 1 ]]
 }
 
