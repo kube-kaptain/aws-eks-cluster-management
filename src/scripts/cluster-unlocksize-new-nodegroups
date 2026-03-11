@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Restore original sizes for all nodegroups defined in cluster.yaml
+# Reads saved values written by cluster-locksize-nodegroup
+#
+# Usage: cluster unlocksize new-nodegroups
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster unlocksize new-nodegroups" >&2
+  exit 1
+fi
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+# Get nodegroup names defined in cluster.yaml
+configured_nodegroups=$(yq '.managedNodeGroups[].name // .nodeGroups[].name' "${CLUSTER_CONFIG}" 2>/dev/null || true)
+
+# Get nodegroup names currently on the cluster
+live_nodegroups=$(eksctl get nodegroups --cluster "${cluster_name}" -o yaml | yq '.[].Name')
+
+new_count=0
+for ng in ${live_nodegroups}; do
+  if echo "${configured_nodegroups}" | grep -qx "${ng}"; then
+    echo "New nodegroup found: ${ng}"
+    "${CLUSTER_SCRIPT_DIR}/cluster-unlocksize-nodegroup" "${ng}"
+    new_count=$((new_count + 1))
+    echo ""
+  fi
+done
+
+if [[ ${new_count} -eq 0 ]]; then
+  echo "No new nodegroups found."
+else
+  echo "Restored size of ${new_count} new nodegroup(s)."
+fi

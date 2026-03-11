@@ -80,6 +80,20 @@ teeth. If you do this with singletons or misconfigured workloads you'll probably
 experience outages during this process; take the slower route, instead.
 
 
+### Backing Out a Nodegroup Migration
+
+If the new nodegroups have problems and you need to revert, the new-nodegroups
+commands mirror the old-nodegroups commands with the selection inverted:
+
+1. Run `cluster uncordon old-nodegroups` to allow scheduling on old nodegroups again
+2. Run `cluster unlocksize old-nodegroups` to restore original min/max on old nodegroups
+3. Run `cluster locksize new-nodegroups` to prevent autoscaler scaling new nodegroups
+4. Run `cluster cordon new-nodegroups` to stop workloads scheduling on new nodegroups
+5. Run `cluster drain new-nodegroups` to move workloads back to old nodegroups
+6. Confirm everything is running on the old nodegroups
+7. Run `cluster delete new-nodegroups` to remove the new nodegroups
+
+
 ### Cluster Creation
 
 To create a new cluster just:

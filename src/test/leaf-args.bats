@@ -147,7 +147,7 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
-# --- cordon/uncordon/drain/locksize old-nodegroups ---
+# --- cordon/uncordon/locksize/unlocksize old-nodegroups ---
 
 @test "cluster-cordon-old-nodegroups: rejects args" {
   run bash "${SCRIPTS_DIR}/cluster-cordon-old-nodegroups" bogus
@@ -169,6 +169,38 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+# --- cordon/uncordon/delete/drain/locksize/unlocksize new-nodegroups ---
+
+@test "cluster-cordon-new-nodegroups: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-cordon-new-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-uncordon-new-nodegroups: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-uncordon-new-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-delete-new-nodegroups: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-new-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-locksize-new-nodegroups: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-locksize-new-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-unlocksize-new-nodegroups: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-unlocksize-new-nodegroups" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-drain-new-nodegroups: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-drain-new-nodegroups" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
 
 # --- other flag scripts (--dry-run) ---
 

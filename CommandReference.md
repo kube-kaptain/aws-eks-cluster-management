@@ -47,6 +47,7 @@ router without arguments to see its available sub-commands.
 | `cluster delete cluster`            | Delete an EKS cluster with interactive confirmation  |
 | `cluster delete nodegroup <name>`   | Delete an EKS nodegroup                              |
 | `cluster delete old-nodegroups`     | Delete all nodegroups not defined in cluster.yaml    |
+| `cluster delete new-nodegroups`     | Delete all nodegroups defined in cluster.yaml        |
 | `cluster delete addon <name>`       | Delete an EKS addon                                  |
 | `cluster delete access-entry <arn>` | Delete a single EKS access entry                     |
 | `cluster delete access-entries`     | Delete access entries not defined in cluster.yaml    |
@@ -118,6 +119,7 @@ router without arguments to see its available sub-commands.
 | `cluster cordon node <name>`       | Cordon a single node to prevent new pods being scheduled    |
 | `cluster cordon nodegroup <name>`  | Cordon all nodes in a nodegroup                             |
 | `cluster cordon old-nodegroups`    | Cordon all nodes in nodegroups not defined in cluster.yaml  |
+| `cluster cordon new-nodegroups`    | Cordon all nodes in nodegroups defined in cluster.yaml      |
 
 ### uncordon
 
@@ -126,6 +128,7 @@ router without arguments to see its available sub-commands.
 | `cluster uncordon node <name>`      | Uncordon a single node to allow pods to be scheduled again    |
 | `cluster uncordon nodegroup <name>` | Uncordon all nodes in a nodegroup                             |
 | `cluster uncordon old-nodegroups`   | Uncordon all nodes in nodegroups not defined in cluster.yaml  |
+| `cluster uncordon new-nodegroups`   | Uncordon all nodes in nodegroups defined in cluster.yaml      |
 
 ### drain
 
@@ -134,6 +137,7 @@ router without arguments to see its available sub-commands.
 | `cluster drain node <name>`      | Drain a single node, evicting all pods                     |
 | `cluster drain nodegroup <name>` | Drain all nodes in a nodegroup                             |
 | `cluster drain old-nodegroups`   | Drain all nodes in nodegroups not defined in cluster.yaml  |
+| `cluster drain new-nodegroups`   | Drain all nodes in nodegroups defined in cluster.yaml      |
 
 ### locksize
 
@@ -141,6 +145,7 @@ router without arguments to see its available sub-commands.
 |-------------------------------------|----------------------------------------------------------------|
 | `cluster locksize nodegroup <name>` | Lock a nodegroup size by setting min and max to current count  |
 | `cluster locksize old-nodegroups`   | Lock the size of all nodegroups not defined in cluster.yaml    |
+| `cluster locksize new-nodegroups`   | Lock the size of all nodegroups defined in cluster.yaml        |
 
 ### unlocksize
 
@@ -148,6 +153,7 @@ router without arguments to see its available sub-commands.
 |---------------------------------------|--------------------------------------------------------------------------|
 | `cluster unlocksize nodegroup <name>` | Restore a nodegroup to its original min/max from before locksize         |
 | `cluster unlocksize old-nodegroups`   | Restore original min/max for all nodegroups not defined in cluster.yaml  |
+| `cluster unlocksize new-nodegroups`   | Restore original min/max for all nodegroups defined in cluster.yaml      |
 
 ### set
 
