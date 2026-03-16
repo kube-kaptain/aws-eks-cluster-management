@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Non-disruptive nodegroup preparation: create new nodegroups, lock and cordon
+# old ones. Skips control plane and addon upgrades. Use this when the control
+# plane and addons are already at the target version (or managed separately)
+# and you only need to roll the nodegroups.
+#
+# Stops before draining so you can inspect the cluster and proceed manually
+# when ready.
+#
+# What this does:
+#   1. Create new nodegroups for the version in cluster.yaml
+#   2. Lock old nodegroup sizes to prevent autoscaler changes
+#   3. Cordon old nodegroups to prevent new pods scheduling on them
+#
+# After this completes, workloads are still running on old nodegroups.
+# Next steps (manual):
+#   - Inspect the cluster to confirm new nodegroups are healthy
+#   - Run 'cluster drain old-nodegroups' to migrate workloads
+#   - Run 'cluster delete old-nodegroups' to remove old nodegroups
+#
+# Usage: cluster upgrade prepare-nodegroups-only [--dry-run]
+set -euo pipefail
+
+dry_run=false
+case "${1:-}" in
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster upgrade prepare-nodegroups-only [--dry-run]" >&2
+    exit 1
+    ;;
+esac
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+configured_version=$(yq '.metadata.version' "${CLUSTER_CONFIG}")
+
+echo "=== Step 1/3: Creating new nodegroups for ${configured_version} ==="
+if [[ "${dry_run}" == "true" ]]; then
+  "${CLUSTER_SCRIPT_DIR}/cluster-create-nodegroups" --dry-run
+else
+  "${CLUSTER_SCRIPT_DIR}/cluster-create-nodegroups"
+fi
+echo ""
+
+echo "=== Step 2/3: Locking old nodegroup sizes ==="
+if [[ "${dry_run}" == "true" ]]; then
+  echo "No dry run available for locksize."
+  echo "Real run would find all old nodegroups and lock min and max to their current desired size."
+else
+  "${CLUSTER_SCRIPT_DIR}/cluster-locksize-old-nodegroups"
+fi
+echo ""
+
+echo "=== Step 3/3: Cordoning old nodegroups ==="
+if [[ "${dry_run}" == "true" ]]; then
+  echo "No dry run available for cordon."
+  echo "Real run would cordon all nodes in old nodegroups to prevent new pods scheduling on them."
+else
+  "${CLUSTER_SCRIPT_DIR}/cluster-cordon-old-nodegroups"
+fi
+echo ""
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Nodegroup preparation complete for ${cluster_name}."
+  echo ""
+  echo "New nodegroup(s) created and ready. Old nodegroups are locked and cordoned. Workloads are still running on them."
+  echo ""
+  echo "Next steps:"
+  echo "  cluster drain old-nodegroups"
+  echo "  cluster delete old-nodegroups"
+  echo ""
+fi

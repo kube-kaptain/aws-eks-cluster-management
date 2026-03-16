@@ -130,7 +130,7 @@ else
   echo ""
 
   echo "--- Removing extra access entries ---"
-  "${CLUSTER_SCRIPT_DIR}/cluster-delete-access-entries"
+  "${CLUSTER_SCRIPT_DIR}/cluster-delete-access-entries" --yes
   echo ""
 
   echo "Access config for ${cluster_name} reconciled to match ${CLUSTER_CONFIG}."

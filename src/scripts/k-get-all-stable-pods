@@ -52,7 +52,7 @@ pod_data=$(kubectl get pods --all-namespaces -o yaml | yq -r '
     .status.phase,                                                             # Used for filtering (Running/Succeeded/Pending/Failed)
     (.status.containerStatuses // [] | map(select(.ready == true)) | length),  # READY numerator (eg the 1 in 1/2)
     (.status.containerStatuses // [] | length),                                # READY denominator (eg the 2 in 1/2)
-    (.status.containerStatuses // [] | map(.restartCount) | add // 0),         # RESTARTS column (sum across all containers)
+    (.status.containerStatuses // [] | map(.restartCount) | .[] as $x ireduce(0; . + $x)),  # RESTARTS column (sum across all containers)
     ((.status.containerStatuses // [])[] | .state | to_entries[0] | select(.value.reason != null) | .value.reason) // .status.phase,  # STATUS column (CrashLoopBackOff etc, or phase as fallback)
     .metadata.creationTimestamp                                                # AGE column (converted to duration in bash)
   ] | @tsv')
