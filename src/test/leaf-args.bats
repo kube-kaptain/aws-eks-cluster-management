@@ -252,6 +252,17 @@ setup() {
   [[ "${output}" == *"Unknown"* ]]
 }
 
+@test "cluster-upgrade-fast-nodegroups-only-automatic: rejects args" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-fast-nodegroups-only-automatic" bogus
+  [[ "${status}" -eq 1 ]]
+}
+
+@test "cluster-upgrade-prepare-nodegroups-only: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-upgrade-prepare-nodegroups-only" --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown"* ]]
+}
+
 @test "cluster-describe-stacks: rejects args" {
   run bash "${SCRIPTS_DIR}/cluster-describe-stacks" bogus
   [[ "${status}" -eq 1 ]]
