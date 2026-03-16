@@ -25,7 +25,7 @@ fi
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
 # Get addon names defined in cluster.yaml
-configured_addons=$(yq -r '.addons[].name // empty' "${CLUSTER_CONFIG}" 2>/dev/null || true)
+configured_addons=$(yq '.addons[].name' "${CLUSTER_CONFIG}")
 
 # Get addon names currently on the cluster
 live_addons=$(eksctl get addons --cluster "${cluster_name}" -o yaml | yq -r '.[].Name')
