@@ -44,6 +44,7 @@ now=$(date +%s)
 
 # Single yq call: extract one line per pod with all fields needed for filtering
 # Fields: namespace, name, phase, ready_count, total_count, restarts, status_reason, age_timestamp
+# shellcheck disable=SC2016 # single quotes are intentional, this is a yq expression not shell
 pod_data=$(kubectl get pods --all-namespaces -o yaml | yq -r '
   .items[] |
   [
