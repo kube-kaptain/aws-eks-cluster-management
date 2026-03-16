@@ -25,6 +25,22 @@ fi
 
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
+has_managed=$(yq '.managedNodeGroups // ""' "${CLUSTER_CONFIG}")
+has_unmanaged=$(yq '.nodeGroups // ""' "${CLUSTER_CONFIG}")
+if [[ ( -z "${has_managed}" || "${has_managed}" == "null" ) && ( -z "${has_unmanaged}" || "${has_unmanaged}" == "null" ) ]]; then
+  echo "Neither type of nodegroup key found in ${CLUSTER_CONFIG}, cannot determine what to keep."
+  echo "Skipping deletion to avoid removing all nodegroups."
+  exit 0
+fi
+
+managed_count=$(yq '.managedNodeGroups // "" | length' "${CLUSTER_CONFIG}")
+unmanaged_count=$(yq '.nodeGroups // "" | length' "${CLUSTER_CONFIG}")
+if [[ "${managed_count}" -eq 0 && "${unmanaged_count}" -eq 0 ]]; then
+  echo "No nodegroups defined in ${CLUSTER_CONFIG}, cannot determine what to keep."
+  echo "Skipping deletion to avoid removing all nodegroups."
+  exit 0
+fi
+
 # Get nodegroup names defined in cluster.yaml
 configured_nodegroups=$(yq '.managedNodeGroups[].name // .nodeGroups[].name' "${CLUSTER_CONFIG}" 2>/dev/null || true)
 

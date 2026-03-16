@@ -24,6 +24,20 @@ fi
 
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
+has_addons=$(yq '.addons // ""' "${CLUSTER_CONFIG}")
+if [[ -z "${has_addons}" || "${has_addons}" == "null" ]]; then
+  echo "Addons key not found in ${CLUSTER_CONFIG}, cannot determine what to keep."
+  echo "Skipping deletion to avoid removing all addons."
+  exit 0
+fi
+
+has_entries=$(yq '.addons // "" | length' "${CLUSTER_CONFIG}")
+if [[ "${has_entries}" -eq 0 ]]; then
+  echo "No addons defined in ${CLUSTER_CONFIG}, cannot determine what to keep."
+  echo "Skipping deletion to avoid removing all addons."
+  exit 0
+fi
+
 # Get addon names defined in cluster.yaml
 configured_addons=$(yq '.addons[].name' "${CLUSTER_CONFIG}")
 

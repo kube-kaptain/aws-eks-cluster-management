@@ -84,6 +84,84 @@ MOCK
 }
 
 # ====================================================================
+# Guards: bail when no nodegroup keys or empty nodegroup arrays
+# ====================================================================
+
+@test "cluster-delete-old-nodegroups: bails when no nodegroup keys" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+YAML
+
+  run bash "${SCRIPTS_DIR}/cluster-delete-old-nodegroups"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Neither type of nodegroup key found in ${CLUSTER_CONFIG}, cannot determine what to keep."* ]]
+  [[ "${output}" == *"Skipping deletion to avoid removing all nodegroups."* ]]
+  ! grep -q "cluster-delete-nodegroup" "${ACTION_LOG}"
+}
+
+@test "cluster-delete-old-nodegroups: bails when nodegroup arrays are empty" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+managedNodeGroups: []
+YAML
+
+  run bash "${SCRIPTS_DIR}/cluster-delete-old-nodegroups"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"No nodegroups defined in ${CLUSTER_CONFIG}, cannot determine what to keep."* ]]
+  [[ "${output}" == *"Skipping deletion to avoid removing all nodegroups."* ]]
+  ! grep -q "cluster-delete-nodegroup" "${ACTION_LOG}"
+}
+
+@test "cluster-delete-new-nodegroups: bails when no nodegroup keys" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+YAML
+
+  run bash "${SCRIPTS_DIR}/cluster-delete-new-nodegroups"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Neither type of nodegroup key found in ${CLUSTER_CONFIG}, cannot determine what to keep."* ]]
+  [[ "${output}" == *"Skipping deletion to avoid removing all nodegroups."* ]]
+  ! grep -q "cluster-delete-nodegroup" "${ACTION_LOG}"
+}
+
+@test "cluster-delete-new-nodegroups: bails when nodegroup arrays are empty" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+managedNodeGroups: []
+YAML
+
+  run bash "${SCRIPTS_DIR}/cluster-delete-new-nodegroups"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"No nodegroups defined in ${CLUSTER_CONFIG}, cannot determine what to keep."* ]]
+  [[ "${output}" == *"Skipping deletion to avoid removing all nodegroups."* ]]
+  ! grep -q "cluster-delete-nodegroup" "${ACTION_LOG}"
+}
+
+# ====================================================================
 # Old-nodegroups: should ONLY operate on ng-old-1
 # ====================================================================
 

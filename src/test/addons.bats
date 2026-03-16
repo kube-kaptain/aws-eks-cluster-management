@@ -87,6 +87,43 @@ MOCK
   echo "${deleted}" | grep -qx "some-old-addon"
 }
 
+@test "cluster-delete-addons: bails when addons key not found" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+YAML
+
+  run bash "${SCRIPTS_DIR}/cluster-delete-addons"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Addons key not found in ${CLUSTER_CONFIG}, cannot determine what to keep."* ]]
+  [[ "${output}" == *"Skipping deletion to avoid removing all addons."* ]]
+  [[ ! -f "${DELETED_LOG}" ]]
+}
+
+@test "cluster-delete-addons: bails when addons array is empty" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+addons: []
+YAML
+
+  run bash "${SCRIPTS_DIR}/cluster-delete-addons"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"No addons defined in ${CLUSTER_CONFIG}, cannot determine what to keep."* ]]
+  [[ "${output}" == *"Skipping deletion to avoid removing all addons."* ]]
+  [[ ! -f "${DELETED_LOG}" ]]
+}
+
 @test "cluster-delete-addons: should NOT delete any configured addons" {
   run bash "${SCRIPTS_DIR}/cluster-delete-addons"
   echo "STATUS: ${status}"
