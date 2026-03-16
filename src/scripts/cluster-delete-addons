@@ -4,12 +4,31 @@
 #
 # Delete all EKS addons not defined in cluster.yaml
 #
-# Usage: cluster delete addons
+# Shows which addons will be deleted and requires confirmation unless
+# --yes is passed. Bails if no addons are configured to avoid
+# accidentally removing all addons from the cluster.
+#
+# Usage: cluster delete addons [--yes]
 set -euo pipefail
+
+confirm=true
+case "${1:-}" in
+  --yes)
+    confirm=false
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster delete addons [--yes]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ $# -ne 0 ]]; then
   echo "ERROR: This command takes no arguments" >&2
-  echo "Usage: cluster delete addons" >&2
+  echo "Usage: cluster delete addons [--yes]" >&2
   exit 1
 fi
 
@@ -44,18 +63,34 @@ configured_addons=$(yq '.addons[].name' "${CLUSTER_CONFIG}")
 # Get addon names currently on the cluster
 live_addons=$(eksctl get addons --cluster "${cluster_name}" -o yaml | yq -r '.[].Name')
 
-extra_count=0
+# Build list of addons not in cluster.yaml
+extras=()
 for addon in ${live_addons}; do
   if ! echo "${configured_addons}" | grep -qx "${addon}"; then
-    echo "Extra addon found: ${addon}"
-    "${CLUSTER_SCRIPT_DIR}/cluster-delete-addon" "${addon}"
-    extra_count=$((extra_count + 1))
-    echo ""
+    extras+=("${addon}")
   fi
 done
 
-if [[ ${extra_count} -eq 0 ]]; then
+if [[ ${#extras[@]} -eq 0 ]]; then
   echo "No extra addons found."
-else
-  echo "Deleted ${extra_count} extra addon(s)."
+  exit 0
 fi
+
+if [[ "${confirm}" == "true" ]]; then
+  echo "Will delete the following ${#extras[@]} addon(s) not defined in cluster.yaml:"
+  for addon in "${extras[@]}"; do
+    echo "  ${addon}"
+  done
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+for addon in "${extras[@]}"; do
+  "${CLUSTER_SCRIPT_DIR}/cluster-delete-addon" "${addon}"
+done
+
+echo "Deleted ${#extras[@]} extra addon(s)."

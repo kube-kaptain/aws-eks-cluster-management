@@ -186,7 +186,7 @@ YAML
 }
 
 @test "cluster-delete-old-nodegroups: only deletes old nodegroups" {
-  run bash "${SCRIPTS_DIR}/cluster-delete-old-nodegroups"
+  run bash "${SCRIPTS_DIR}/cluster-delete-old-nodegroups" --yes
   echo "OUTPUT: ${output}"
   [[ "${status}" -eq 0 ]]
   [[ $(grep -c "cluster-delete-nodegroup" "${ACTION_LOG}") -eq 1 ]]
@@ -270,7 +270,7 @@ YAML
 }
 
 @test "cluster-delete-new-nodegroups: only deletes new nodegroups" {
-  run bash "${SCRIPTS_DIR}/cluster-delete-new-nodegroups"
+  run bash "${SCRIPTS_DIR}/cluster-delete-new-nodegroups" --yes
   echo "OUTPUT: ${output}"
   [[ "${status}" -eq 0 ]]
   [[ $(grep -c "cluster-delete-nodegroup" "${ACTION_LOG}") -eq 2 ]]
@@ -317,4 +317,50 @@ YAML
   grep -q "ng-new-1" "${ACTION_LOG}"
   grep -q "ng-new-2" "${ACTION_LOG}"
   ! grep -q "ng-old-1" "${ACTION_LOG}"
+}
+
+# ====================================================================
+# Confirmation behaviour
+# ====================================================================
+
+@test "cluster-delete-old-nodegroups: shows list and proceeds when confirmed" {
+  run bash -c "echo 'yes' | bash '${SCRIPTS_DIR}/cluster-delete-old-nodegroups'"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Will delete the following 1 old nodegroup(s) not defined in cluster.yaml:"* ]]
+  [[ "${output}" == *"ng-old-1"* ]]
+  [[ "${output}" == *"Deleted 1 old nodegroup(s)."* ]]
+  grep -q "cluster-delete-nodegroup ng-old-1" "${ACTION_LOG}"
+}
+
+@test "cluster-delete-old-nodegroups: aborts when confirmation denied" {
+  run bash -c "echo 'no' | bash '${SCRIPTS_DIR}/cluster-delete-old-nodegroups'"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Aborted."* ]]
+  ! grep -q "cluster-delete-nodegroup" "${ACTION_LOG}"
+}
+
+@test "cluster-delete-new-nodegroups: shows list and proceeds when confirmed" {
+  run bash -c "echo 'yes' | bash '${SCRIPTS_DIR}/cluster-delete-new-nodegroups'"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Will delete the following 2 new nodegroup(s) defined in cluster.yaml:"* ]]
+  [[ "${output}" == *"ng-new-1"* ]]
+  [[ "${output}" == *"ng-new-2"* ]]
+  [[ "${output}" == *"Deleted 2 new nodegroup(s)."* ]]
+  grep -q "cluster-delete-nodegroup ng-new-1" "${ACTION_LOG}"
+  grep -q "cluster-delete-nodegroup ng-new-2" "${ACTION_LOG}"
+}
+
+@test "cluster-delete-new-nodegroups: aborts when confirmation denied" {
+  run bash -c "echo 'no' | bash '${SCRIPTS_DIR}/cluster-delete-new-nodegroups'"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Aborted."* ]]
+  ! grep -q "cluster-delete-nodegroup" "${ACTION_LOG}"
 }

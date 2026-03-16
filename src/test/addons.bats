@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# Integration test for cluster-delete-addons
+# Integration tests for cluster-delete-addons
 #
-# Mocks eksctl and cluster-delete-addon to prove the script
-# incorrectly deletes configured addons.
+# Mocks eksctl and cluster-delete-addon to verify correct addon
+# selection, empty-config guards, and confirmation behaviour.
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
 
@@ -71,8 +71,12 @@ MOCK
   chmod +x "${CLUSTER_SCRIPT_DIR}/cluster-delete-addon"
 }
 
+# ====================================================================
+# Correctness with --yes
+# ====================================================================
+
 @test "cluster-delete-addons: should only delete addons NOT in cluster.yaml" {
-  run bash "${SCRIPTS_DIR}/cluster-delete-addons"
+  run bash "${SCRIPTS_DIR}/cluster-delete-addons" --yes
   echo "STATUS: ${status}"
   echo "OUTPUT: ${output}"
 
@@ -86,6 +90,27 @@ MOCK
   [[ $(echo "${deleted}" | wc -l) -eq 1 ]]
   echo "${deleted}" | grep -qx "some-old-addon"
 }
+
+@test "cluster-delete-addons: should NOT delete any configured addons" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-addons" --yes
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+
+  if [[ -f "${DELETED_LOG}" ]]; then
+    deleted=$(cat "${DELETED_LOG}")
+    echo "DELETED: ${deleted}"
+    # None of the configured addons should appear in the delete log
+    ! echo "${deleted}" | grep -qx "vpc-cni"
+    ! echo "${deleted}" | grep -qx "coredns"
+    ! echo "${deleted}" | grep -qx "kube-proxy"
+    ! echo "${deleted}" | grep -qx "aws-ebs-csi-driver"
+    ! echo "${deleted}" | grep -qx "eks-pod-identity-agent"
+  fi
+}
+
+# ====================================================================
+# Empty-config guards
+# ====================================================================
 
 @test "cluster-delete-addons: bails when addons key not found" {
   cat > "${CLUSTER_CONFIG}" <<'YAML'
@@ -124,19 +149,28 @@ YAML
   [[ ! -f "${DELETED_LOG}" ]]
 }
 
-@test "cluster-delete-addons: should NOT delete any configured addons" {
-  run bash "${SCRIPTS_DIR}/cluster-delete-addons"
+# ====================================================================
+# Confirmation behaviour
+# ====================================================================
+
+@test "cluster-delete-addons: shows list and proceeds when confirmed" {
+  run bash -c "echo 'yes' | bash '${SCRIPTS_DIR}/cluster-delete-addons'"
   echo "STATUS: ${status}"
   echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Will delete the following 1 addon(s) not defined in cluster.yaml:"* ]]
+  [[ "${output}" == *"some-old-addon"* ]]
+  [[ "${output}" == *"Deleted 1 extra addon(s)."* ]]
+  [[ -f "${DELETED_LOG}" ]]
+  grep -qx "some-old-addon" "${DELETED_LOG}"
+}
 
-  if [[ -f "${DELETED_LOG}" ]]; then
-    deleted=$(cat "${DELETED_LOG}")
-    echo "DELETED: ${deleted}"
-    # None of the configured addons should appear in the delete log
-    ! echo "${deleted}" | grep -qx "vpc-cni"
-    ! echo "${deleted}" | grep -qx "coredns"
-    ! echo "${deleted}" | grep -qx "kube-proxy"
-    ! echo "${deleted}" | grep -qx "aws-ebs-csi-driver"
-    ! echo "${deleted}" | grep -qx "eks-pod-identity-agent"
-  fi
+@test "cluster-delete-addons: aborts when confirmation denied" {
+  run bash -c "echo 'no' | bash '${SCRIPTS_DIR}/cluster-delete-addons'"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "${output}" == *"Will delete the following 1 addon(s) not defined in cluster.yaml:"* ]]
+  [[ "${output}" == *"Aborted."* ]]
+  [[ ! -f "${DELETED_LOG}" ]]
 }

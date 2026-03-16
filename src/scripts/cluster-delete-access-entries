@@ -10,13 +10,30 @@
 #
 # Requires authenticationMode to be API or API_AND_CONFIG_MAP.
 # Compares live entries against cluster.yaml and removes extras.
+# Shows which entries will be deleted and requires confirmation
+# unless --yes is passed.
 #
-# Usage: cluster delete access-entries
+# Usage: cluster delete access-entries [--yes]
 set -euo pipefail
+
+confirm=true
+case "${1:-}" in
+  --yes)
+    confirm=false
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster delete access-entries [--yes]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ $# -ne 0 ]]; then
   echo "ERROR: This command takes no arguments" >&2
-  echo "Usage: cluster delete access-entries" >&2
+  echo "Usage: cluster delete access-entries [--yes]" >&2
   exit 1
 fi
 
@@ -58,7 +75,25 @@ if [[ -z "${extras}" ]]; then
   exit 0
 fi
 
-echo "Removing access entries not defined in ${CLUSTER_CONFIG}..."
+extra_count=$(echo "${extras}" | wc -l | tr -d ' ')
+
+if [[ "${confirm}" == "true" ]]; then
+  if [[ "${extra_count}" -eq 1 ]]; then
+    echo "Will delete the following 1 access entry not defined in cluster.yaml:"
+  else
+    echo "Will delete the following ${extra_count} access entries not defined in cluster.yaml:"
+  fi
+  while IFS= read -r arn; do
+    echo "  ${arn}"
+  done <<< "${extras}"
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
 while IFS= read -r arn; do
   "${CLUSTER_SCRIPT_DIR}/cluster-delete-access-entry" "${arn}"
 done <<< "${extras}"

@@ -5,12 +5,31 @@
 # Delete all nodegroups that are not defined in cluster.yaml
 # These are typically old nodegroups left over after an upgrade
 #
-# Usage: cluster delete old-nodegroups
+# Shows which nodegroups will be deleted and requires confirmation
+# unless --yes is passed. Bails if no nodegroups are configured to
+# avoid accidentally removing all nodegroups from the cluster.
+#
+# Usage: cluster delete old-nodegroups [--yes]
 set -euo pipefail
+
+confirm=true
+case "${1:-}" in
+  --yes)
+    confirm=false
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster delete old-nodegroups [--yes]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ $# -ne 0 ]]; then
   echo "ERROR: This command takes no arguments" >&2
-  echo "Usage: cluster delete old-nodegroups" >&2
+  echo "Usage: cluster delete old-nodegroups [--yes]" >&2
   exit 1
 fi
 
@@ -47,18 +66,34 @@ configured_nodegroups=$(yq '.managedNodeGroups[].name // .nodeGroups[].name' "${
 # Get nodegroup names currently on the cluster
 live_nodegroups=$(eksctl get nodegroups --cluster "${cluster_name}" -o yaml | yq '.[].Name')
 
-old_count=0
+# Build list of nodegroups not in cluster.yaml
+extras=()
 for ng in ${live_nodegroups}; do
   if ! echo "${configured_nodegroups}" | grep -qx "${ng}"; then
-    echo "Old nodegroup found: ${ng}"
-    "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
-    old_count=$((old_count + 1))
-    echo ""
+    extras+=("${ng}")
   fi
 done
 
-if [[ ${old_count} -eq 0 ]]; then
+if [[ ${#extras[@]} -eq 0 ]]; then
   echo "No old nodegroups found."
-else
-  echo "Deleted ${old_count} old nodegroup(s)."
+  exit 0
 fi
+
+if [[ "${confirm}" == "true" ]]; then
+  echo "Will delete the following ${#extras[@]} old nodegroup(s) not defined in cluster.yaml:"
+  for ng in "${extras[@]}"; do
+    echo "  ${ng}"
+  done
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+for ng in "${extras[@]}"; do
+  "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
+done
+
+echo "Deleted ${#extras[@]} old nodegroup(s)."

@@ -6,12 +6,31 @@
 # Useful for rollback scenarios where you need to remove newly created
 # nodegroups and revert to the previous set
 #
-# Usage: cluster delete new-nodegroups
+# Shows which nodegroups will be deleted and requires confirmation
+# unless --yes is passed. Bails if no nodegroups are configured to
+# avoid accidentally removing all nodegroups from the cluster.
+#
+# Usage: cluster delete new-nodegroups [--yes]
 set -euo pipefail
+
+confirm=true
+case "${1:-}" in
+  --yes)
+    confirm=false
+    shift
+    ;;
+  "")
+    ;;
+  *)
+    echo "ERROR: Unknown flag '${1}'" >&2
+    echo "Usage: cluster delete new-nodegroups [--yes]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ $# -ne 0 ]]; then
   echo "ERROR: This command takes no arguments" >&2
-  echo "Usage: cluster delete new-nodegroups" >&2
+  echo "Usage: cluster delete new-nodegroups [--yes]" >&2
   exit 1
 fi
 
@@ -48,18 +67,34 @@ configured_nodegroups=$(yq '.managedNodeGroups[].name // .nodeGroups[].name' "${
 # Get nodegroup names currently on the cluster
 live_nodegroups=$(eksctl get nodegroups --cluster "${cluster_name}" -o yaml | yq '.[].Name')
 
-new_count=0
+# Build list of nodegroups in cluster.yaml (new ones)
+targets=()
 for ng in ${live_nodegroups}; do
   if echo "${configured_nodegroups}" | grep -qx "${ng}"; then
-    echo "New nodegroup found: ${ng}"
-    "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
-    new_count=$((new_count + 1))
-    echo ""
+    targets+=("${ng}")
   fi
 done
 
-if [[ ${new_count} -eq 0 ]]; then
+if [[ ${#targets[@]} -eq 0 ]]; then
   echo "No new nodegroups found."
-else
-  echo "Deleted ${new_count} new nodegroup(s)."
+  exit 0
 fi
+
+if [[ "${confirm}" == "true" ]]; then
+  echo "Will delete the following ${#targets[@]} new nodegroup(s) defined in cluster.yaml:"
+  for ng in "${targets[@]}"; do
+    echo "  ${ng}"
+  done
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+for ng in "${targets[@]}"; do
+  "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
+done
+
+echo "Deleted ${#targets[@]} new nodegroup(s)."

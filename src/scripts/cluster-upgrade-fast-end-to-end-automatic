@@ -107,7 +107,7 @@ print_banner "Step 11: Draining old nodegroups"
 "${CLUSTER_SCRIPT_DIR}/cluster-drain-old-nodegroups"
 
 print_banner "Step 12: Deleting old nodegroups"
-"${CLUSTER_SCRIPT_DIR}/cluster-delete-old-nodegroups"
+"${CLUSTER_SCRIPT_DIR}/cluster-delete-old-nodegroups" --yes
 
 print_banner "Step 13: Reconciling cluster against cluster.yaml"
 "${CLUSTER_SCRIPT_DIR}/cluster-upgrade-yaml-reconciliation"
