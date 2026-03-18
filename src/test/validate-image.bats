@@ -140,6 +140,52 @@ YAML
   [[ "${output}" == *"Validation passed"* ]]
 }
 
+@test "validate-image checks all 3 addons when 3 defined" {
+  cat > "${WORK_DIR}/cluster.yaml" <<'YAML'
+metadata:
+  name: test-cluster
+  region: us-east-1
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: v1.2.3
+  - name: kube-proxy
+    version: latest
+YAML
+  export CLUSTER_CONFIG="${WORK_DIR}/cluster.yaml"
+  run bash "${SCRIPTS_DIR}/cluster-validate-image"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"coredns"* ]]
+  [[ "${output}" == *"must be 'latest'"* ]]
+  [[ "${output}" == *"1 error(s)"* ]]
+}
+
+@test "validate-image reports multiple addon errors" {
+  cat > "${WORK_DIR}/cluster.yaml" <<'YAML'
+metadata:
+  name: test-cluster
+  region: us-east-1
+addons:
+  - name: vpc-cni
+    version: v1.0.0
+  - name: coredns
+    version: v1.2.3
+  - name: kube-proxy
+    version: latest
+YAML
+  export CLUSTER_CONFIG="${WORK_DIR}/cluster.yaml"
+  run bash "${SCRIPTS_DIR}/cluster-validate-image"
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"vpc-cni"* ]]
+  [[ "${output}" == *"coredns"* ]]
+  [[ "${output}" == *"2 error(s)"* ]]
+}
+
 @test "validate-image rejects arguments" {
   cat > "${WORK_DIR}/cluster.yaml" <<'YAML'
 metadata:

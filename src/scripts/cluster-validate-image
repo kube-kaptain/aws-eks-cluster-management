@@ -57,7 +57,7 @@ if [[ -z "${region}" ]]; then
 fi
 
 # addon versions must be "latest" (resolved at deploy time)
-addon_count=$(yq '.addons | length // 0' "${CLUSTER_CONFIG}")
+addon_count=$(yq '.addons | length' "${CLUSTER_CONFIG}")
 if [[ ${addon_count} -gt 0 ]]; then
   for i in $(seq 0 $((addon_count - 1))); do
     addon_name=$(yq ".addons[${i}].name" "${CLUSTER_CONFIG}")
