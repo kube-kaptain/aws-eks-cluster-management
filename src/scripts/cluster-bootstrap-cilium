@@ -15,7 +15,7 @@ case "${1:-}" in
     ;;
   *)
     echo "ERROR: Unknown flag '${1}'" >&2
-    echo "Usage: cluster-bootstrap-cilium [--dry-run]" >&2
+    echo "Usage: cluster bootstrap cilium [--dry-run]" >&2
     exit 1
     ;;
 esac

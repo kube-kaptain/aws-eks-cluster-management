@@ -26,7 +26,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#args[@]} -lt 1 || ${#args[@]} -gt 2 ]]; then
-  echo "Usage: $(basename "$0") <addon-name> [target-version] [--force]" >&2
+  echo "Usage: cluster upgrade addon <addon-name> [target-version] [--force]" >&2
   exit 1
 fi
 
