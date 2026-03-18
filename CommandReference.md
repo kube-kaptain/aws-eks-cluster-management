@@ -43,16 +43,16 @@ router without arguments to see its available sub-commands.
 
 ### delete
 
-| Command                             | Description                                          |
-|-------------------------------------|------------------------------------------------------|
-| `cluster delete cluster`            | Delete an EKS cluster with interactive confirmation  |
-| `cluster delete nodegroup <name>`   | Delete an EKS nodegroup                              |
-| `cluster delete old-nodegroups [--yes]`  | Delete all nodegroups not defined in cluster.yaml    |
-| `cluster delete new-nodegroups [--yes]`  | Delete all nodegroups defined in cluster.yaml        |
-| `cluster delete addon <name>`            | Delete an EKS addon                                  |
-| `cluster delete addons [--yes]`          | Delete all addons not defined in cluster.yaml        |
-| `cluster delete access-entry <arn>`      | Delete a single EKS access entry                     |
-| `cluster delete access-entries [--yes]`  | Delete access entries not defined in cluster.yaml    |
+| Command                                            | Description                                          |
+|----------------------------------------------------|------------------------------------------------------|
+| `cluster delete cluster`                           | Delete an EKS cluster with interactive confirmation  |
+| `cluster delete nodegroup <name> [--force]`        | Delete an EKS nodegroup                              |
+| `cluster delete old-nodegroups [--yes] [--force]`  | Delete all nodegroups not defined in cluster.yaml    |
+| `cluster delete new-nodegroups [--yes] [--force]`  | Delete all nodegroups defined in cluster.yaml        |
+| `cluster delete addon <name>`                      | Delete an EKS addon                                  |
+| `cluster delete addons [--yes]`                    | Delete all addons not defined in cluster.yaml        |
+| `cluster delete access-entry <arn>`                | Delete a single EKS access entry                     |
+| `cluster delete access-entries [--yes]`            | Delete access entries not defined in cluster.yaml    |
 
 
 ## Information

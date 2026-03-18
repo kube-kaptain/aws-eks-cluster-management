@@ -4,21 +4,34 @@
 #
 # Delete an EKS nodegroup
 #
-# Usage: cluster delete nodegroup <nodegroup-name>
+# Usage: cluster delete nodegroup <nodegroup-name> [--force]
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-  echo "Usage: cluster delete nodegroup <nodegroup-name>" >&2
+force=""
+nodegroup_name=""
+for arg in "$@"; do
+  case "${arg}" in
+    --force) force="--force" ;;
+    --*)
+      echo "ERROR: Unknown flag '${arg}'" >&2
+      echo "Usage: cluster delete nodegroup <nodegroup-name> [--force]" >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "${nodegroup_name}" ]]; then
+        echo "ERROR: Too many arguments" >&2
+        echo "Usage: cluster delete nodegroup <nodegroup-name> [--force]" >&2
+        exit 1
+      fi
+      nodegroup_name="${arg}"
+      ;;
+  esac
+done
+
+if [[ -z "${nodegroup_name}" ]]; then
+  echo "Usage: cluster delete nodegroup <nodegroup-name> [--force]" >&2
   exit 1
 fi
-
-if [[ $# -gt 1 ]]; then
-  echo "ERROR: Too many arguments" >&2
-  echo "Usage: cluster delete nodegroup <nodegroup-name>" >&2
-  exit 1
-fi
-
-nodegroup_name="$1"
 
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 
@@ -30,5 +43,6 @@ fi
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
 echo "Deleting nodegroup ${nodegroup_name} from cluster ${cluster_name}..."
-eksctl delete nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" --wait
+# shellcheck disable=SC2086 # force must word-split when set, disappear when empty
+eksctl delete nodegroup --cluster "${cluster_name}" --name "${nodegroup_name}" --wait ${force}
 echo "Nodegroup ${nodegroup_name} deleted."

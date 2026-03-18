@@ -9,29 +9,22 @@
 # unless --yes is passed. Bails if no nodegroups are configured to
 # avoid accidentally removing all nodegroups from the cluster.
 #
-# Usage: cluster delete old-nodegroups [--yes]
+# Usage: cluster delete old-nodegroups [--yes] [--force]
 set -euo pipefail
 
 confirm=true
-case "${1:-}" in
-  --yes)
-    confirm=false
-    shift
-    ;;
-  "")
-    ;;
-  *)
-    echo "ERROR: Unknown flag '${1}'" >&2
-    echo "Usage: cluster delete old-nodegroups [--yes]" >&2
-    exit 1
-    ;;
-esac
-
-if [[ $# -ne 0 ]]; then
-  echo "ERROR: This command takes no arguments" >&2
-  echo "Usage: cluster delete old-nodegroups [--yes]" >&2
-  exit 1
-fi
+force=""
+for arg in "$@"; do
+  case "${arg}" in
+    --yes) confirm=false ;;
+    --force) force="--force" ;;
+    *)
+      echo "ERROR: Unknown flag '${arg}'" >&2
+      echo "Usage: cluster delete old-nodegroups [--yes] [--force]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
 
@@ -93,7 +86,8 @@ if [[ "${confirm}" == "true" ]]; then
 fi
 
 for ng in "${extras[@]}"; do
-  "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}"
+  # shellcheck disable=SC2086 # force must word-split when set, disappear when empty
+  "${CLUSTER_SCRIPT_DIR}/cluster-delete-nodegroup" "${ng}" ${force}
 done
 
 echo "Deleted ${#extras[@]} old nodegroup(s)."

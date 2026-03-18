@@ -383,6 +383,12 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+@test "cluster-delete-nodegroup: rejects unknown flag" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-nodegroup" mygroup --bogus
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"Unknown flag"* ]]
+}
+
 @test "cluster-delete-addon: no args exits 1" {
   run bash "${SCRIPTS_DIR}/cluster-delete-addon"
   [[ "${status}" -eq 1 ]]
