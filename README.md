@@ -1,4 +1,4 @@
-# AWS EKS Cluster Management
+# Image AWS EKS Cluster Management
 
 A comprehensive set of tools for managing EKS clusters on AWS.
 
@@ -26,11 +26,17 @@ Built for `linux/amd64` and `linux/arm64` for your ease of use.
 
 ## Usage
 
-To use this image the best approach is to use a Kaptain build process. Right
-now only GitHub Actions workflows are available, so below is a link to the
-example file for the correct workflow for using this image.
+To use this image the best approach is to use a Kaptain build process and layer
+or layerset. Right now only GitHub Actions workflows are available, so below
+are links to the example file for the correct workflow for use with the layer(set)
+as well as to the layer and layerset themselves where more info on config and
+setup is available.
 
-[Kaptain GH Actions example workflow](https://github.com/kube-kaptain/buildon-github-actions/blob/main/examples/aws-eks-cluster-management.yaml)
+* [Layer AWS EKS Cluster Management](https://github.com/kube-kaptain/layer-aws-eks-cluster-management) provides a strict specialist build for this image
+* [Layerset AWS EKS Cluster Management](https://github.com/kube-kaptain/layerset-aws-eks-cluster-management) combines the above layer with [GitHub Flow Strict](https://github.com/kube-kaptain/layer-github-flow-strict)
+* [Kaptain GH Actions example workflow](https://github.com/kube-kaptain/buildon-github-actions/blob/main/examples/basic-quality-and-versioning.yaml) is the required build type to match the layer
+
+The [layer README.md](https://github.com/kube-kaptain/layer-aws-eks-cluster-management#layer-aws-eks-cluster-management) gives information on how to configure your project.
 
 
 ## Use Patterns
