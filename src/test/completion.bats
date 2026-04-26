@@ -2,7 +2,7 @@
 # Test bash completion for the cluster command
 
 COMPLETION_SCRIPT="$(cd "${BATS_TEST_DIRNAME}/../docker" && pwd)/cluster-completion.bash"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/completion"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/completion"
 
 setup() {
   rm -rf "${WORK_DIR}"

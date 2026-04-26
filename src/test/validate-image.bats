@@ -2,7 +2,7 @@
 # Test cluster-validate-image with mock cluster.yaml files
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/validate-image"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/validate-image"
 
 setup() {
   rm -rf "${WORK_DIR}"

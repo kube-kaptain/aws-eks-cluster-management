@@ -2,7 +2,7 @@
 # Static analysis of all scripts
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/script-standards"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/script-standards"
 
 setup() {
   rm -rf "${WORK_DIR}"
