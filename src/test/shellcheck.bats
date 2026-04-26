@@ -2,7 +2,7 @@
 # Run shellcheck on all scripts
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/shellcheck"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/shellcheck"
 
 setup() {
   rm -rf "${WORK_DIR}"

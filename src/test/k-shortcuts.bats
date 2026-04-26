@@ -2,7 +2,7 @@
 # Test k shortcut scripts reject missing/bad arguments
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/k-shortcuts"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/k-shortcuts"
 
 setup() {
   rm -rf "${WORK_DIR}"

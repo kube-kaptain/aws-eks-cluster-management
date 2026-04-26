@@ -2,7 +2,7 @@
 # Test document scripts produce expected output
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/documents"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/documents"
 
 setup() {
   rm -rf "${WORK_DIR}"

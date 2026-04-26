@@ -2,7 +2,7 @@
 # Test cluster-create-nodegroup and cluster-create-nodegroups argument handling
 
 SCRIPTS_DIR="$(cd "${BATS_TEST_DIRNAME}/../scripts" && pwd)"
-WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../../target" && pwd)/create-nodegroups"
+WORK_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)/${OUTPUT_SUB_PATH:-kaptain-out}/create-nodegroups"
 
 setup() {
   rm -rf "${WORK_DIR}"
