@@ -17,6 +17,8 @@ ensure_installed() {
       apt_updated="true"
     fi
     sudo apt-get install -y -qq "${pkg}"
+  else
+    echo "Already installed ${pkg}"
   fi
 }
 
@@ -33,9 +35,12 @@ for script in "${SCRIPTS_DIR}"/cluster*; do
     errors=$((errors + 1))
   fi
 done
+echo "Pre-flight check scan complete."
 if [[ ${errors} -gt 0 ]]; then
   echo "${errors} script(s) missing executable permission"
   exit 1
+else
+  echo "No errors."
 fi
 echo "  All scripts executable."
 
