@@ -13,27 +13,31 @@
 # Shows which entries will be deleted and requires confirmation
 # unless --yes is passed.
 #
-# Usage: cluster delete access-entries [--yes]
+# Usage: cluster delete access-entries [--yes | --dry-run]
 set -euo pipefail
 
 confirm=true
-case "${1:-}" in
-  --yes)
-    confirm=false
-    shift
-    ;;
-  "")
-    ;;
-  *)
-    echo "ERROR: Unknown flag '${1}'" >&2
-    echo "Usage: cluster delete access-entries [--yes]" >&2
-    exit 1
-    ;;
-esac
+dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes)
+      confirm=false
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      echo "ERROR: Unknown argument '$1'" >&2
+      echo "Usage: cluster delete access-entries [--yes | --dry-run]" >&2
+      exit 1
+      ;;
+  esac
+done
 
-if [[ $# -ne 0 ]]; then
-  echo "ERROR: This command takes no arguments" >&2
-  echo "Usage: cluster delete access-entries [--yes]" >&2
+if [[ "${dry_run}" == "true" && "${confirm}" == "false" ]]; then
+  echo "ERROR: --yes and --dry-run are mutually exclusive" >&2
   exit 1
 fi
 
@@ -76,6 +80,20 @@ if [[ -z "${extras}" ]]; then
 fi
 
 extra_count=$(echo "${extras}" | wc -l | tr -d ' ')
+
+if [[ "${dry_run}" == "true" ]]; then
+  if [[ "${extra_count}" -eq 1 ]]; then
+    echo "Dry run: would delete the following 1 access entry not defined in cluster.yaml:"
+  else
+    echo "Dry run: would delete the following ${extra_count} access entries not defined in cluster.yaml:"
+  fi
+  while IFS= read -r arn; do
+    echo "  ${arn}"
+  done <<< "${extras}"
+  echo ""
+  echo "Dry run complete. No changes were made."
+  exit 0
+fi
 
 if [[ "${confirm}" == "true" ]]; then
   if [[ "${extra_count}" -eq 1 ]]; then
