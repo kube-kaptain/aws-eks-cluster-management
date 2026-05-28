@@ -162,6 +162,18 @@ setup() {
   [[ "${status}" -eq 1 ]]
 }
 
+@test "cluster-delete-access-entries: rejects --yes --dry-run together" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-access-entries" --yes --dry-run
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"mutually exclusive"* ]]
+}
+
+@test "cluster-delete-access-entries: rejects --dry-run --yes together" {
+  run bash "${SCRIPTS_DIR}/cluster-delete-access-entries" --dry-run --yes
+  [[ "${status}" -eq 1 ]]
+  [[ "${output}" == *"mutually exclusive"* ]]
+}
+
 # --- cordon/uncordon/locksize/unlocksize old-nodegroups ---
 
 @test "cluster-cordon-old-nodegroups: rejects args" {

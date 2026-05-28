@@ -1,0 +1,536 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Reconcile all Pod Identity associations and IAM roles for the cluster
+# against cluster.yaml. Three phases, global ordering:
+#   Phase 1 — IAM roles (category 1 only)
+#   Phase 2 — EKS associations (categories 1 and 2)
+#   Phase 3 — remove no-longer-declared associations
+#
+# Safety:
+# - Partial-tagged live associations (managed-by ours, no
+#   association-key) hard-fail planning — cannot be classified safely.
+# - Shared-role guard: a role is kept if any surviving association
+#   still references it after Phase 3.
+# - Role drift fixed atomically via PutRolePolicy / tag-role; never
+#   delete+recreate roles (preserves identity + active sessions).
+# - Association drift uses delete+create (EKS does not support
+#   in-place update).
+#
+# Bash 3.2 compatible (no `declare -A`): uses parallel indexed arrays
+# with linear-search helpers in place of associative maps.
+#
+# Usage: cluster upgrade pod-identities [--yes | --dry-run]
+set -euo pipefail
+
+confirm=true
+dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes)     confirm=false; shift ;;
+    --dry-run) dry_run=true;  shift ;;
+    *)
+      echo "ERROR: Unknown argument '$1'" >&2
+      echo "Usage: cluster upgrade pod-identities [--yes | --dry-run]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "${dry_run}" == "true" && "${confirm}" == "false" ]]; then
+  echo "ERROR: --yes and --dry-run are mutually exclusive" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+IAM_ROLE_POLICY_DIR="${IAM_ROLE_POLICY_DIR:-/kd/iam}"
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+addon_declared=false
+if yq -r '.addons[]?.name' "${CLUSTER_CONFIG}" \
+  | grep -qx 'eks-pod-identity-agent'; then
+  addon_declared=true
+fi
+if [[ "${addon_declared}" != "true" ]]; then
+  echo "pod-identity-agent addon not declared in cluster.yaml; skipping"
+  exit 0
+fi
+
+# Parallel-array "map" backing — bash 3.2 has no associative arrays.
+
+# Declared state, positionally aligned with declared_keys[].
+declared_keys=()
+decl_ns=()
+decl_sa=()
+decl_role_arn=()
+decl_role_name=()
+decl_category=()
+
+_decl_idx() {
+  local _k="$1" _i _n=${#declared_keys[@]}
+  for ((_i = 0; _i < _n; _i++)); do
+    if [[ "${declared_keys[${_i}]}" == "${_k}" ]]; then
+      echo "${_i}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Live state, positionally aligned with live_keys[].
+live_keys=()
+live_aids=()
+live_ns=()
+live_sa=()
+live_role_arn=()
+
+_live_idx() {
+  local _k="$1" _i _n=${#live_keys[@]}
+  for ((_i = 0; _i < _n; _i++)); do
+    if [[ "${live_keys[${_i}]}" == "${_k}" ]]; then
+      echo "${_i}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Role-reference counter for Phase 3 shared-role guard.
+role_ref_names=()
+role_ref_counts=()
+
+_role_ref_inc() {
+  local _rn="$1" _i _n=${#role_ref_names[@]}
+  for ((_i = 0; _i < _n; _i++)); do
+    if [[ "${role_ref_names[${_i}]}" == "${_rn}" ]]; then
+      role_ref_counts[_i]=$(( role_ref_counts[_i] + 1 ))
+      return
+    fi
+  done
+  role_ref_names[_n]="${_rn}"
+  role_ref_counts[_n]=1
+}
+
+_role_ref_get() {
+  local _rn="$1" _i _n=${#role_ref_names[@]}
+  for ((_i = 0; _i < _n; _i++)); do
+    if [[ "${role_ref_names[${_i}]}" == "${_rn}" ]]; then
+      echo "${role_ref_counts[${_i}]}"
+      return
+    fi
+  done
+  echo 0
+}
+
+# =============================================================================
+# Step A: gather declared and live state
+# =============================================================================
+
+while IFS= read -r k; do
+  [[ -n "${k}" && "${k}" != "null" ]] || continue
+  d=$(yq -o=json ".iam.podIdentityAssociations[] | select(.tags[\"kaptain.org/association-key\"] == \"${k}\")" "${CLUSTER_CONFIG}")
+  ns_val=$(echo "${d}" | yq -p=json -r '.namespace')
+  sa_val=$(echo "${d}" | yq -p=json -r '.serviceAccountName')
+  arn_val=$(echo "${d}" | yq -p=json -r '.roleARN')
+  rn_val="${arn_val##*/}"
+  if [[ -f "${IAM_ROLE_POLICY_DIR}/${k}.json" ]]; then
+    cat_val=1
+  else
+    cat_val=2
+  fi
+  declared_keys+=("${k}")
+  decl_ns+=("${ns_val}")
+  decl_sa+=("${sa_val}")
+  decl_role_arn+=("${arn_val}")
+  decl_role_name+=("${rn_val}")
+  decl_category+=("${cat_val}")
+done < <(yq -r '.iam.podIdentityAssociations[]?.tags["kaptain.org/association-key"] // ""' "${CLUSTER_CONFIG}")
+
+partial_tagged_ids=()
+
+while IFS= read -r aid; do
+  [[ -z "${aid}" ]] && continue
+  detail=$(aws eks describe-pod-identity-association \
+    --cluster-name "${cluster_name}" --association-id "${aid}" --output json)
+  m=$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/managed-by"] // ""')
+  if [[ "${m}" != "${cluster_name}" ]]; then
+    continue
+  fi
+  a_key=$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/association-key"] // ""')
+  if [[ -z "${a_key}" || "${a_key}" == "null" ]]; then
+    partial_tagged_ids+=("${aid}")
+    continue
+  fi
+  live_keys+=("${a_key}")
+  live_aids+=("${aid}")
+  live_ns+=("$(echo "${detail}" | yq -p=json -r '.association.namespace')")
+  live_sa+=("$(echo "${detail}" | yq -p=json -r '.association.serviceAccount')")
+  live_role_arn+=("$(echo "${detail}" | yq -p=json -r '.association.roleArn')")
+done < <(aws eks list-pod-identity-associations \
+    --cluster-name "${cluster_name}" --output json \
+  | yq -p=json -r '.associations[]?.associationId')
+
+# Partial-tagged (managed-by ours, no association-key) live entries are
+# drift — they can't be in the declared set without a key to match.
+# Phase 3 cleans them up (consistent with cluster-delete-pod-identities).
+
+# =============================================================================
+# Step B: build plans (phase 1, phase 2, phase 3) without mutating
+# =============================================================================
+
+phase1_plan=()
+phase1_calls=()
+phase2_plan=()
+phase2_calls=()
+phase3_plan=()
+phase3_calls=()
+phase3_role_deleted=()
+
+key_failed=()
+
+n_decl=${#declared_keys[@]}
+for ((i = 0; i < n_decl; i++)); do
+  k="${declared_keys[${i}]}"
+  [[ "${decl_category[${i}]}" == "1" ]] || continue
+  rn="${decl_role_name[${i}]}"
+  policy_file="${IAM_ROLE_POLICY_DIR}/${k}.json"
+
+  gr_err=$(mktemp)
+  if aws iam get-role --role-name "${rn}" --output json >/dev/null 2>"${gr_err}"; then
+    tags_json=$(aws iam list-role-tags --role-name "${rn}" --output json)
+    role_mb=$(echo "${tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/managed-by") | .Value')
+    role_ak=$(echo "${tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/association-key") | .Value')
+    if [[ "${role_mb}" != "${cluster_name}" ]]; then
+      echo "ERROR: IAM role '${rn}' exists but is not tagged kaptain.org/managed-by=${cluster_name}" >&2
+      echo "       (live: '${role_mb:-<none>}'). Refusing to touch." >&2
+      key_failed+=("${k}")
+      rm -f "${gr_err}"
+      continue
+    fi
+    if [[ "${role_ak}" != "${k}" ]]; then
+      phase1_plan+=("  [Phase 1] IAM role '${rn}': fix tag kaptain.org/association-key (live: '${role_ak:-<none>}' -> '${k}')")
+      phase1_calls+=("${rn}|tag|${k}")
+    fi
+    gpr_err=$(mktemp); gpr_out=$(mktemp)
+    have_policy=false
+    live_doc=""
+    if aws iam get-role-policy --role-name "${rn}" --policy-name kaptain --output json >"${gpr_out}" 2>"${gpr_err}"; then
+      have_policy=true
+      live_doc=$(yq -p=json -o=json '.PolicyDocument' "${gpr_out}")
+    elif ! grep -q "NoSuchEntity" "${gpr_err}"; then
+      cat "${gpr_err}" >&2
+      rm -f "${gpr_err}" "${gpr_out}" "${gr_err}"
+      exit 1
+    fi
+    rm -f "${gpr_err}" "${gpr_out}"
+    declared_doc=$(yq -o=json '.' "${policy_file}")
+    if [[ "${have_policy}" == "false" ]] || \
+       [[ "$(echo "${declared_doc}" | yq -p=json -o=json 'sort_keys(..)')" != \
+          "$(echo "${live_doc}" | yq -p=json -o=json 'sort_keys(..)')" ]]; then
+      phase1_plan+=("  [Phase 1] IAM role '${rn}': put inline policy 'kaptain' from ${policy_file}")
+      phase1_calls+=("${rn}|put-policy|${policy_file}")
+    fi
+  elif grep -q "NoSuchEntity" "${gr_err}"; then
+    phase1_plan+=("  [Phase 1] IAM role '${rn}': create + tag + put inline policy 'kaptain' from ${policy_file}")
+    phase1_calls+=("${rn}|create|${policy_file}|${k}")
+  else
+    cat "${gr_err}" >&2
+    rm -f "${gr_err}"
+    exit 1
+  fi
+  rm -f "${gr_err}"
+done
+
+key_failed_set=" ${key_failed[*]:-} "
+for ((i = 0; i < n_decl; i++)); do
+  k="${declared_keys[${i}]}"
+  [[ "${key_failed_set}" == *" ${k} "* ]] && continue
+  aid=""
+  li=""
+  if li=$(_live_idx "${k}"); then
+    aid="${live_aids[${li}]}"
+  fi
+  if [[ -z "${aid}" ]]; then
+    phase2_plan+=("  [Phase 2] EKS association '${k}': create namespace=${decl_ns[${i}]} sa=${decl_sa[${i}]} roleARN=${decl_role_arn[${i}]}")
+    phase2_calls+=("${k}|create|")
+    continue
+  fi
+  l_ns="${live_ns[${li}]}"
+  l_sa="${live_sa[${li}]}"
+  l_arn="${live_role_arn[${li}]}"
+  if [[ "${l_ns}" != "${decl_ns[${i}]}" ]] \
+  || [[ "${l_sa}" != "${decl_sa[${i}]}" ]] \
+  || [[ "${l_arn}" != "${decl_role_arn[${i}]}" ]]; then
+    phase2_plan+=("  [Phase 2] EKS association '${k}' (${aid}): drift detected — delete and recreate")
+    phase2_plan+=("                              live  ns=${l_ns} sa=${l_sa} arn=${l_arn}")
+    phase2_plan+=("                              decl  ns=${decl_ns[${i}]} sa=${decl_sa[${i}]} arn=${decl_role_arn[${i}]}")
+    phase2_calls+=("${k}|recreate|${aid}")
+  fi
+done
+
+# Shared-role detection: count refs across surviving (declared +
+# live-and-still-declared) associations.
+for ((i = 0; i < n_decl; i++)); do
+  _role_ref_inc "${decl_role_name[${i}]}"
+done
+declared_keys_set=" ${declared_keys[*]:-} "
+n_live=${#live_keys[@]}
+for ((j = 0; j < n_live; j++)); do
+  a_key="${live_keys[${j}]}"
+  if [[ "${declared_keys_set}" == *" ${a_key} "* ]]; then
+    larn="${live_role_arn[${j}]}"
+    lrn="${larn##*/}"
+    _role_ref_inc "${lrn}"
+  fi
+done
+
+for ((j = 0; j < n_live; j++)); do
+  a_key="${live_keys[${j}]}"
+  if [[ "${declared_keys_set}" == *" ${a_key} "* ]]; then
+    continue
+  fi
+  aid="${live_aids[${j}]}"
+  larn="${live_role_arn[${j}]}"
+  lrn="${larn##*/}"
+  phase3_plan+=("  [Phase 3] EKS association '${a_key}' (${aid}): delete (no longer declared)")
+  phase3_calls+=("${a_key}|delete-assoc|${aid}")
+
+  refs=$(_role_ref_get "${lrn}")
+  if [[ "${refs}" -gt 0 ]]; then
+    phase3_plan+=("              role '${lrn}' kept (still referenced by ${refs} other association(s))")
+    continue
+  fi
+  gr_err=$(mktemp)
+  if aws iam get-role --role-name "${lrn}" --output json >/dev/null 2>"${gr_err}"; then
+    tj=$(aws iam list-role-tags --role-name "${lrn}" --output json)
+    role_mb=$(echo "${tj}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/managed-by") | .Value')
+    if [[ "${role_mb}" == "${cluster_name}" ]]; then
+      phase3_plan+=("              IAM role '${lrn}': delete inline policy + delete role")
+      phase3_calls+=("${a_key}|delete-role|${lrn}")
+      phase3_role_deleted+=("${lrn}")
+    else
+      phase3_plan+=("              IAM role '${lrn}' kept (not tagged ours)")
+    fi
+  elif ! grep -q "NoSuchEntity" "${gr_err}"; then
+    cat "${gr_err}" >&2
+    rm -f "${gr_err}"
+    exit 1
+  fi
+  rm -f "${gr_err}"
+done
+
+# Partial-tagged live associations (managed-by ours, no association-key)
+# are drift — schedule for deletion. Their roles can't be linked back so
+# they're picked up by the orphan tag-search below if they're ours.
+for aid in ${partial_tagged_ids[@]+"${partial_tagged_ids[@]}"}; do
+  phase3_plan+=("  [Phase 3] EKS association ${aid}: delete (partial-tagged, no association-key)")
+  phase3_calls+=("partial|delete-assoc|${aid}")
+done
+
+# Tag-search for orphan IAM roles: tagged kaptain.org/managed-by=<cluster>
+# but not declared and not referenced by any surviving (declared+live)
+# association. Catches roles left behind by a previously-failed create or
+# by manual association deletion.
+keep_role_names=" "
+for ((i = 0; i < n_decl; i++)); do
+  keep_role_names+="${decl_role_name[${i}]} "
+done
+for ((j = 0; j < n_live; j++)); do
+  if [[ "${declared_keys_set}" == *" ${live_keys[${j}]} "* ]]; then
+    keep_role_names+="${live_role_arn[${j}]##*/} "
+  fi
+done
+
+phase3_role_deleted_set=" ${phase3_role_deleted[*]:-} "
+
+while IFS= read -r role_arn; do
+  [[ -z "${role_arn}" ]] && continue
+  rn="${role_arn##*/}"
+  if [[ "${keep_role_names}" == *" ${rn} "* ]]; then
+    continue
+  fi
+  if [[ "${phase3_role_deleted_set}" == *" ${rn} "* ]]; then
+    continue
+  fi
+  refs=$(_role_ref_get "${rn}")
+  if [[ "${refs}" -gt 0 ]]; then
+    continue
+  fi
+  phase3_plan+=("  [Phase 3] IAM role '${rn}': orphan (no live association ref, not declared), delete")
+  phase3_calls+=("orphan|delete-role|${rn}")
+  phase3_role_deleted+=("${rn}")
+  phase3_role_deleted_set=" ${phase3_role_deleted[*]:-} "
+done < <(aws resourcegroupstaggingapi get-resources \
+  --tag-filters "Key=kaptain.org/managed-by,Values=${cluster_name}" \
+  --resource-type-filters iam:role \
+  --output json \
+  | yq -p=json -r '.ResourceTagMappingList[]?.ResourceARN')
+
+# =============================================================================
+# Step C: print plan, dispatch on flag
+# =============================================================================
+total_actions=$(( ${#phase1_plan[@]} + ${#phase2_plan[@]} + ${#phase3_plan[@]} ))
+if [[ "${total_actions}" -eq 0 && ${#key_failed[@]} -eq 0 ]]; then
+  echo "Cluster ${cluster_name} pod-identities are already in the desired state. Nothing to do."
+  exit 0
+fi
+
+echo "Reconcile plan for cluster '${cluster_name}':"
+if [[ ${#phase1_plan[@]} -gt 0 ]]; then for l in "${phase1_plan[@]}"; do echo "${l}"; done; fi
+if [[ ${#phase2_plan[@]} -gt 0 ]]; then for l in "${phase2_plan[@]}"; do echo "${l}"; done; fi
+if [[ ${#phase3_plan[@]} -gt 0 ]]; then for l in "${phase3_plan[@]}"; do echo "${l}"; done; fi
+echo ""
+
+if [[ ${#key_failed[@]} -gt 0 ]]; then
+  echo "Keys with Phase 1 errors (excluded from execution): ${key_failed[*]}"
+  echo ""
+fi
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run complete. No changes were made."
+  exit 0
+fi
+
+if [[ "${confirm}" == "true" ]]; then
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+# =============================================================================
+# Step D: execute, global phase ordering
+# =============================================================================
+exec_failures=()
+
+for call in ${phase1_calls[@]+"${phase1_calls[@]}"}; do
+  IFS='|' read -r rn op arg1 arg2 <<< "${call}"
+  case "${op}" in
+    create)
+      trust='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"pods.eks.amazonaws.com"},"Action":["sts:AssumeRole","sts:TagSession"]}]}'
+      if ! aws iam create-role --role-name "${rn}" \
+            --assume-role-policy-document "${trust}" \
+            --tags "Key=kaptain.org/managed-by,Value=${cluster_name}" \
+                   "Key=kaptain.org/association-key,Value=${arg2}" \
+            >/dev/null; then
+        exec_failures+=("Phase 1 create-role ${rn}")
+        continue
+      fi
+      if ! aws iam put-role-policy --role-name "${rn}" --policy-name kaptain \
+            --policy-document "file://${arg1}" >/dev/null; then
+        exec_failures+=("Phase 1 put-role-policy ${rn}")
+      fi
+      ;;
+    put-policy)
+      if ! aws iam put-role-policy --role-name "${rn}" --policy-name kaptain \
+            --policy-document "file://${arg1}" >/dev/null; then
+        exec_failures+=("Phase 1 put-role-policy ${rn}")
+      fi
+      ;;
+    tag)
+      if ! aws iam tag-role --role-name "${rn}" \
+            --tags "Key=kaptain.org/association-key,Value=${arg1}" >/dev/null; then
+        exec_failures+=("Phase 1 tag-role ${rn}")
+      fi
+      ;;
+  esac
+done
+
+phase1_failed_roles=" "
+for f in ${exec_failures[@]+"${exec_failures[@]}"}; do
+  if [[ "${f}" == "Phase 1 "* ]]; then
+    phase1_failed_roles+="${f##* } "
+  fi
+done
+
+for call in ${phase2_calls[@]+"${phase2_calls[@]}"}; do
+  IFS='|' read -r k op aid <<< "${call}"
+  di=""
+  if di=$(_decl_idx "${k}"); then
+    rn="${decl_role_name[${di}]}"
+    ns="${decl_ns[${di}]}"
+    sa="${decl_sa[${di}]}"
+    arn="${decl_role_arn[${di}]}"
+  else
+    exec_failures+=("Phase 2 ${k} (internal: declared state missing)")
+    continue
+  fi
+  if [[ "${phase1_failed_roles}" == *" ${rn} "* ]]; then
+    exec_failures+=("Phase 2 ${k} (skipped: role failed in Phase 1)")
+    continue
+  fi
+  case "${op}" in
+    create)
+      if ! aws eks create-pod-identity-association \
+            --cluster-name "${cluster_name}" \
+            --namespace "${ns}" \
+            --service-account "${sa}" \
+            --role-arn "${arn}" \
+            --tags "kaptain.org/managed-by=${cluster_name},kaptain.org/association-key=${k}" \
+            >/dev/null; then
+        exec_failures+=("Phase 2 create-association ${k}")
+      fi
+      ;;
+    recreate)
+      if ! aws eks delete-pod-identity-association \
+            --cluster-name "${cluster_name}" --association-id "${aid}" \
+            >/dev/null; then
+        exec_failures+=("Phase 2 delete-association ${k} (${aid})")
+        continue
+      fi
+      if ! aws eks create-pod-identity-association \
+            --cluster-name "${cluster_name}" \
+            --namespace "${ns}" \
+            --service-account "${sa}" \
+            --role-arn "${arn}" \
+            --tags "kaptain.org/managed-by=${cluster_name},kaptain.org/association-key=${k}" \
+            >/dev/null; then
+        exec_failures+=("Phase 2 create-association ${k} (recreate)")
+      fi
+      ;;
+  esac
+done
+
+for call in ${phase3_calls[@]+"${phase3_calls[@]}"}; do
+  IFS='|' read -r k op arg <<< "${call}"
+  case "${op}" in
+    delete-assoc)
+      if ! aws eks delete-pod-identity-association \
+            --cluster-name "${cluster_name}" --association-id "${arg}" \
+            >/dev/null; then
+        exec_failures+=("Phase 3 delete-association ${k} (${arg})")
+      fi
+      ;;
+    delete-role)
+      drp_err=$(mktemp)
+      if ! aws iam delete-role-policy --role-name "${arg}" --policy-name kaptain 2>"${drp_err}"; then
+        if ! grep -q "NoSuchEntity" "${drp_err}"; then
+          cat "${drp_err}" >&2
+          rm -f "${drp_err}"
+          exec_failures+=("Phase 3 delete-role-policy ${arg}")
+          continue
+        fi
+      fi
+      rm -f "${drp_err}"
+      if ! aws iam delete-role --role-name "${arg}" >/dev/null; then
+        exec_failures+=("Phase 3 delete-role ${arg}")
+      fi
+      ;;
+  esac
+done
+
+echo ""
+if [[ ${#exec_failures[@]} -gt 0 || ${#key_failed[@]} -gt 0 ]]; then
+  echo "Reconcile completed with failures:"
+  for f in ${key_failed[@]+"${key_failed[@]}"}; do echo "  - ${f} (Phase 1 planning failed)"; done
+  for f in ${exec_failures[@]+"${exec_failures[@]}"}; do echo "  - ${f}"; done
+  exit 1
+fi
+echo "Reconcile complete. Cluster ${cluster_name} pod-identities are in the desired state."

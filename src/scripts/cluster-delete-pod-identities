@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Drift cleanup for EKS Pod Identity associations + their IAM roles.
+#
+# Source of truth is cluster.yaml's
+# iam.podIdentityAssociations[].tags["kaptain.org/association-key"] set.
+# Anything live and tagged kaptain.org/managed-by=${cluster_name} whose
+# association-key tag value is NOT in that set (or whose key tag is
+# missing entirely) is drift and gets deleted.
+#
+# Mirrors 'cluster delete addons': refuses to run if the declared
+# section is missing or empty — we can't distinguish "everything is
+# drift, delete it all" from "yaml not loaded, accident". For full
+# teardown, loop the greedy singular 'cluster delete pod-identity <key>'
+# per key — it finds and removes role-only orphans via tag search.
+#
+# Live discovery sources:
+#   1. aws eks list-pod-identity-associations (associations)
+#   2. aws resourcegroupstaggingapi get-resources --tag-filters
+#      managed-by (IAM roles, catches role-only orphans). Requires
+#      tag:GetResources IAM permission; eventual-consistency lag may
+#      delay visibility of newly-created roles by a few minutes.
+#
+# Usage: cluster delete pod-identities [--yes | --dry-run]
+set -euo pipefail
+
+confirm=true
+dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes)     confirm=false; shift ;;
+    --dry-run) dry_run=true;  shift ;;
+    *)
+      echo "ERROR: Unknown argument '$1'" >&2
+      echo "Usage: cluster delete pod-identities [--yes | --dry-run]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "${dry_run}" == "true" && "${confirm}" == "false" ]]; then
+  echo "ERROR: --yes and --dry-run are mutually exclusive" >&2
+  exit 1
+fi
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+addon_declared=false
+if yq -r '.addons[]?.name' "${CLUSTER_CONFIG}" \
+  | grep -qx 'eks-pod-identity-agent'; then
+  addon_declared=true
+fi
+if [[ "${addon_declared}" != "true" ]]; then
+  echo "pod-identity-agent addon not declared in cluster.yaml; skipping"
+  exit 0
+fi
+
+# Safety: refuse if the declared section is missing or empty. Without
+# an intent declaration we cannot distinguish "everything is drift,
+# delete all" from "yaml not loaded, accident". Mirrors 'cluster
+# delete addons'.
+has_section=$(yq '.iam.podIdentityAssociations // ""' "${CLUSTER_CONFIG}")
+if [[ -z "${has_section}" || "${has_section}" == "null" ]]; then
+  echo "iam.podIdentityAssociations key not found in ${CLUSTER_CONFIG}, cannot determine what to keep."
+  echo "Skipping deletion to avoid removing all pod identities."
+  exit 0
+fi
+declared_count=$(yq '.iam.podIdentityAssociations | length' "${CLUSTER_CONFIG}")
+if [[ "${declared_count}" -eq 0 ]]; then
+  echo "iam.podIdentityAssociations is empty in ${CLUSTER_CONFIG}, cannot determine what to keep."
+  echo "Skipping deletion to avoid removing all pod identities."
+  exit 0
+fi
+
+# Declared key set as a newline-separated string (bash 3.2: no
+# associative arrays). Lookup via grep -qx.
+declared_keys=$(yq -r '.iam.podIdentityAssociations[]?.tags["kaptain.org/association-key"] // ""' "${CLUSTER_CONFIG}" | grep -v '^$' || true)
+
+is_declared() {
+  local k="$1"
+  [[ -z "${k}" ]] && return 1
+  echo "${declared_keys}" | grep -qx "${k}"
+}
+
+drift_keys=()
+drift_unkeyed_assoc_ids=()
+drift_unkeyed_role_names=()
+
+add_drift_key() {
+  local k="$1"
+  local existing
+  for existing in ${drift_keys[@]+"${drift_keys[@]}"}; do
+    [[ "${existing}" == "${k}" ]] && return
+  done
+  drift_keys+=("${k}")
+}
+
+# Source 1: live associations tagged managed-by=<cluster>.
+while IFS= read -r aid; do
+  [[ -z "${aid}" ]] && continue
+  detail=$(aws eks describe-pod-identity-association \
+    --cluster-name "${cluster_name}" --association-id "${aid}" --output json)
+  m=$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/managed-by"] // ""')
+  [[ "${m}" != "${cluster_name}" ]] && continue
+  k=$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/association-key"] // ""')
+  if [[ -z "${k}" || "${k}" == "null" ]]; then
+    drift_unkeyed_assoc_ids+=("${aid}")
+  elif ! is_declared "${k}"; then
+    add_drift_key "${k}"
+  fi
+done < <(aws eks list-pod-identity-associations \
+    --cluster-name "${cluster_name}" --output json \
+  | yq -p=json -r '.associations[]?.associationId')
+
+# Source 2: IAM roles tagged managed-by=<cluster>. Catches role-only
+# orphans (association already deleted or never created).
+while IFS= read -r role_arn; do
+  [[ -z "${role_arn}" ]] && continue
+  rn="${role_arn##*/}"
+  tags_json=$(aws iam list-role-tags --role-name "${rn}" --output json)
+  k=$(echo "${tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/association-key") | .Value')
+  if [[ -z "${k}" ]]; then
+    drift_unkeyed_role_names+=("${rn}")
+  elif ! is_declared "${k}"; then
+    add_drift_key "${k}"
+  fi
+done < <(aws resourcegroupstaggingapi get-resources \
+  --tag-filters "Key=kaptain.org/managed-by,Values=${cluster_name}" \
+  --resource-type-filters iam:role \
+  --output json \
+  | yq -p=json -r '.ResourceTagMappingList[]?.ResourceARN')
+
+total_drift=$(( ${#drift_keys[@]} + ${#drift_unkeyed_assoc_ids[@]} + ${#drift_unkeyed_role_names[@]} ))
+if [[ "${total_drift}" -eq 0 ]]; then
+  echo "No drift found. All ours-tagged pod identities on ${cluster_name} match declared keys in ${CLUSTER_CONFIG}."
+  exit 0
+fi
+
+plan_buffer=$(mktemp)
+trap 'rm -f "${plan_buffer}"' EXIT
+
+if [[ ${#drift_keys[@]} -gt 0 ]]; then
+  echo "Drift (keyed — association-key not declared in ${CLUSTER_CONFIG}):" >> "${plan_buffer}"
+  for k in "${drift_keys[@]}"; do
+    "${CLUSTER_SCRIPT_DIR}/cluster-delete-pod-identity" "${k}" --dry-run >> "${plan_buffer}" 2>&1 || true
+    echo "" >> "${plan_buffer}"
+  done
+fi
+
+if [[ ${#drift_unkeyed_assoc_ids[@]} -gt 0 ]]; then
+  echo "Drift (associations tagged managed-by but missing association-key):" >> "${plan_buffer}"
+  for aid in "${drift_unkeyed_assoc_ids[@]}"; do
+    echo "  - delete association ${aid}" >> "${plan_buffer}"
+  done
+  echo "" >> "${plan_buffer}"
+fi
+
+if [[ ${#drift_unkeyed_role_names[@]} -gt 0 ]]; then
+  echo "Drift (IAM roles tagged managed-by but missing association-key):" >> "${plan_buffer}"
+  for rn in "${drift_unkeyed_role_names[@]}"; do
+    echo "  - delete inline policy 'kaptain' from IAM role '${rn}'" >> "${plan_buffer}"
+    echo "  - delete IAM role '${rn}'" >> "${plan_buffer}"
+  done
+  echo "" >> "${plan_buffer}"
+fi
+
+echo "Drift cleanup plan for cluster ${cluster_name}:"
+cat "${plan_buffer}"
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run complete. No changes were made."
+  exit 0
+fi
+
+if [[ "${confirm}" == "true" ]]; then
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+exec_failures=()
+
+for k in ${drift_keys[@]+"${drift_keys[@]}"}; do
+  echo ""
+  echo "--- Deleting key: ${k} ---"
+  if ! "${CLUSTER_SCRIPT_DIR}/cluster-delete-pod-identity" "${k}" --yes; then
+    exec_failures+=("key:${k}")
+  fi
+done
+
+for aid in ${drift_unkeyed_assoc_ids[@]+"${drift_unkeyed_assoc_ids[@]}"}; do
+  echo ""
+  echo "--- Deleting unkeyed association: ${aid} ---"
+  if ! aws eks delete-pod-identity-association \
+       --cluster-name "${cluster_name}" \
+       --association-id "${aid}" \
+       >/dev/null; then
+    exec_failures+=("assoc:${aid}")
+  fi
+done
+
+for rn in ${drift_unkeyed_role_names[@]+"${drift_unkeyed_role_names[@]}"}; do
+  echo ""
+  echo "--- Deleting unkeyed role: ${rn} ---"
+  drp_err=$(mktemp)
+  if ! aws iam delete-role-policy \
+       --role-name "${rn}" \
+       --policy-name kaptain 2>"${drp_err}"; then
+    if ! grep -q "NoSuchEntity" "${drp_err}"; then
+      cat "${drp_err}" >&2
+      rm -f "${drp_err}"
+      exec_failures+=("role:${rn}")
+      continue
+    fi
+  fi
+  rm -f "${drp_err}"
+  if ! aws iam delete-role --role-name "${rn}" >/dev/null; then
+    exec_failures+=("role:${rn}")
+  fi
+done
+
+if [[ ${#exec_failures[@]} -gt 0 ]]; then
+  echo ""
+  echo "Failures:"
+  for f in "${exec_failures[@]}"; do echo "  - ${f}"; done
+  exit 1
+fi
+
+echo ""
+echo "Drift cleanup complete for ${cluster_name}."

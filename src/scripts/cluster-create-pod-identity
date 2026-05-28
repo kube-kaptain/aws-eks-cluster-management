@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Create one EKS Pod Identity association (and its IAM role for managed
+# mode), or no-op if already in the desired state.
+#
+# Strict-idempotent: refuses to overwrite. On mismatch the operator must
+# use 'cluster upgrade pod-identities' to reconcile.
+#
+# Usage: cluster create pod-identity <key> [--yes | --dry-run]
+set -euo pipefail
+
+key=""
+confirm=true
+dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes)     confirm=false; shift ;;
+    --dry-run) dry_run=true;  shift ;;
+    --*)
+      echo "ERROR: Unknown flag '$1'" >&2
+      echo "Usage: cluster create pod-identity <key> [--yes | --dry-run]" >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "${key}" ]]; then
+        echo "ERROR: Multiple keys passed; only one is allowed" >&2
+        exit 1
+      fi
+      key="$1"; shift
+      ;;
+  esac
+done
+
+if [[ -z "${key}" ]]; then
+  echo "ERROR: <key> is required" >&2
+  echo "Usage: cluster create pod-identity <key> [--yes | --dry-run]" >&2
+  exit 1
+fi
+
+if [[ "${dry_run}" == "true" && "${confirm}" == "false" ]]; then
+  echo "ERROR: --yes and --dry-run are mutually exclusive" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+IAM_ROLE_POLICY_DIR="${IAM_ROLE_POLICY_DIR:-/kd/iam}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+# Cilium / controlplane-only graceful no-op: if cluster.yaml does not
+# declare the eks-pod-identity-agent addon, this cluster opts out of
+# pod identities entirely. cluster.yaml is the source of truth — live
+# addon state may lag (install pending) or lead (uninstall pending).
+addon_declared=false
+if yq -r '.addons[]?.name' "${CLUSTER_CONFIG}" \
+  | grep -qx 'eks-pod-identity-agent'; then
+  addon_declared=true
+fi
+if [[ "${addon_declared}" != "true" ]]; then
+  echo "pod-identity-agent addon not declared in cluster.yaml; skipping"
+  exit 0
+fi
+
+declared=$(yq -o=json \
+  ".iam.podIdentityAssociations[] | select(.tags[\"kaptain.org/association-key\"] == \"${key}\")" \
+  "${CLUSTER_CONFIG}")
+
+if [[ -z "${declared}" || "${declared}" == "null" ]]; then
+  echo "ERROR: No association tagged kaptain.org/association-key=${key} in ${CLUSTER_CONFIG}" >&2
+  exit 1
+fi
+
+declared_ns=$(echo "${declared}" | yq -p=json '.namespace')
+declared_sa=$(echo "${declared}" | yq -p=json '.serviceAccountName')
+declared_role_arn=$(echo "${declared}" | yq -p=json '.roleARN')
+declared_role_name="${declared_role_arn##*/}"
+
+if [[ -f "${IAM_ROLE_POLICY_DIR}/${key}.json" ]]; then
+  category=1
+  policy_file="${IAM_ROLE_POLICY_DIR}/${key}.json"
+else
+  category=2
+  policy_file=""
+fi
+
+live_role_exists=false
+live_role_tags_json='{"Tags":[]}'
+live_role_policy_doc=""
+if [[ "${category}" -eq 1 ]]; then
+  role_lookup_err=$(mktemp)
+  if aws iam get-role --role-name "${declared_role_name}" --output json >/dev/null 2>"${role_lookup_err}"; then
+    live_role_exists=true
+    live_role_tags_json=$(aws iam list-role-tags --role-name "${declared_role_name}" --output json)
+    gpr_err=$(mktemp)
+    gpr_out=$(mktemp)
+    if aws iam get-role-policy --role-name "${declared_role_name}" --policy-name kaptain --output json >"${gpr_out}" 2>"${gpr_err}"; then
+      live_role_policy_doc=$(yq -p=json -o=json '.PolicyDocument' "${gpr_out}")
+    elif ! grep -q "NoSuchEntity" "${gpr_err}"; then
+      cat "${gpr_err}" >&2
+      rm -f "${gpr_err}" "${gpr_out}" "${role_lookup_err}"
+      exit 1
+    fi
+    rm -f "${gpr_err}" "${gpr_out}"
+  elif ! grep -q "NoSuchEntity" "${role_lookup_err}"; then
+    cat "${role_lookup_err}" >&2
+    rm -f "${role_lookup_err}"
+    exit 1
+  fi
+  rm -f "${role_lookup_err}"
+fi
+
+# EKS guarantees uniqueness of (cluster, namespace, serviceAccount), so at most
+# one association can match.
+live_assoc=""
+assoc_ids=$(aws eks list-pod-identity-associations \
+  --cluster-name "${cluster_name}" \
+  --namespace "${declared_ns}" \
+  --service-account "${declared_sa}" \
+  --output json | yq -p=json -r '.associations[]?.associationId')
+if [[ -n "${assoc_ids}" ]]; then
+  assoc_id=$(echo "${assoc_ids}" | head -n1)
+  live_assoc=$(aws eks describe-pod-identity-association \
+    --cluster-name "${cluster_name}" \
+    --association-id "${assoc_id}" \
+    --output json | yq -p=json -o=json '.association')
+fi
+
+# Two output buckets:
+#   plan_lines     -- additive work the script is willing to do
+#   mismatch_lines -- drift the script refuses to "fix" here; operator must
+#                     use `cluster upgrade pod-identities` to reconcile.
+plan_lines=()
+mismatch_lines=()
+
+if [[ "${category}" -eq 1 ]]; then
+  if [[ "${live_role_exists}" == "false" ]]; then
+    plan_lines+=(
+      "  IAM role '${declared_role_name}':"
+      "    - create with trust on pods.eks.amazonaws.com"
+      "    - tag kaptain.org/managed-by=${cluster_name}"
+      "    - tag kaptain.org/association-key=${key}"
+      "    - put inline policy 'kaptain' from ${policy_file}"
+    )
+  else
+    role_managed_by=$(echo "${live_role_tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/managed-by") | .Value')
+    role_assoc_key=$(echo "${live_role_tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/association-key") | .Value')
+    if [[ "${role_managed_by}" != "${cluster_name}" ]]; then
+      echo "ERROR: IAM role '${declared_role_name}' exists but is not tagged kaptain.org/managed-by=${cluster_name}" >&2
+      echo "       (live tag value: '${role_managed_by:-<none>}')" >&2
+      echo "       Refusing to touch a role we don't own." >&2
+      exit 1
+    fi
+    if [[ "${role_assoc_key}" != "${key}" ]]; then
+      mismatch_lines+=("IAM role '${declared_role_name}' tag kaptain.org/association-key differs (live: '${role_assoc_key:-<none>}', declared: '${key}')")
+    fi
+    declared_doc=$(yq -o=json '.' "${policy_file}")
+    if [[ -z "${live_role_policy_doc}" ]]; then
+      mismatch_lines+=("IAM role '${declared_role_name}' has no inline policy 'kaptain' (expected from ${policy_file})")
+    elif [[ "$(echo "${declared_doc}" | yq -p=json -o=json 'sort_keys(..)')" != \
+            "$(echo "${live_role_policy_doc}" | yq -p=json -o=json 'sort_keys(..)')" ]]; then
+      mismatch_lines+=("IAM role '${declared_role_name}' inline policy 'kaptain' differs from ${policy_file}")
+    fi
+  fi
+fi
+
+if [[ -z "${live_assoc}" || "${live_assoc}" == "null" ]]; then
+  plan_lines+=(
+    "  EKS pod-identity association:"
+    "    - create namespace=${declared_ns} serviceAccountName=${declared_sa} roleARN=${declared_role_arn}"
+    "    - tag kaptain.org/managed-by=${cluster_name}"
+    "    - tag kaptain.org/association-key=${key}"
+  )
+else
+  live_role_arn=$(echo "${live_assoc}" | yq -p=json -r '.roleArn')
+  live_managed_by=$(echo "${live_assoc}" | yq -p=json -r '.tags["kaptain.org/managed-by"] // ""')
+  live_assoc_key=$(echo "${live_assoc}" | yq -p=json -r '.tags["kaptain.org/association-key"] // ""')
+  if [[ "${live_managed_by}" != "${cluster_name}" ]]; then
+    echo "ERROR: Pod identity association for ${declared_ns}/${declared_sa} exists but is not tagged kaptain.org/managed-by=${cluster_name}" >&2
+    echo "       (live tag value: '${live_managed_by:-<none>}')" >&2
+    echo "       Refusing to touch an association we don't own." >&2
+    exit 1
+  fi
+  if [[ "${live_assoc_key}" != "${key}" ]]; then
+    mismatch_lines+=("Association ${declared_ns}/${declared_sa} tag kaptain.org/association-key differs (live: '${live_assoc_key:-<none>}', declared: '${key}')")
+  fi
+  if [[ "${live_role_arn}" != "${declared_role_arn}" ]]; then
+    mismatch_lines+=("Association ${declared_ns}/${declared_sa} roleARN differs (live: ${live_role_arn}, declared: ${declared_role_arn})")
+  fi
+fi
+
+if [[ ${#mismatch_lines[@]} -gt 0 ]]; then
+  echo "ERROR: Pod identity '${key}' exists but does not match the declared state:" >&2
+  for line in "${mismatch_lines[@]}"; do echo "       - ${line}" >&2; done
+  echo "       Run 'cluster upgrade pod-identities' to reconcile." >&2
+  exit 1
+fi
+
+if [[ ${#plan_lines[@]} -eq 0 ]]; then
+  echo "Pod identity '${key}' is already in the desired state. Nothing to do."
+  exit 0
+fi
+
+echo "Plan for pod-identity '${key}':"
+for line in "${plan_lines[@]}"; do echo "${line}"; done
+echo ""
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run complete. No changes were made."
+  exit 0
+fi
+
+if [[ "${confirm}" == "true" ]]; then
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+if [[ "${category}" -eq 1 && "${live_role_exists}" == "false" ]]; then
+  trust_doc='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"pods.eks.amazonaws.com"},"Action":["sts:AssumeRole","sts:TagSession"]}]}'
+  aws iam create-role \
+    --role-name "${declared_role_name}" \
+    --assume-role-policy-document "${trust_doc}" \
+    --tags "Key=kaptain.org/managed-by,Value=${cluster_name}" \
+           "Key=kaptain.org/association-key,Value=${key}" \
+    >/dev/null
+  aws iam put-role-policy \
+    --role-name "${declared_role_name}" \
+    --policy-name kaptain \
+    --policy-document "file://${policy_file}" \
+    >/dev/null
+fi
+
+if [[ -z "${live_assoc}" ]]; then
+  aws eks create-pod-identity-association \
+    --cluster-name "${cluster_name}" \
+    --namespace "${declared_ns}" \
+    --service-account "${declared_sa}" \
+    --role-arn "${declared_role_arn}" \
+    --tags "kaptain.org/managed-by=${cluster_name},kaptain.org/association-key=${key}" \
+    >/dev/null
+fi
+
+echo "Pod identity '${key}' created."

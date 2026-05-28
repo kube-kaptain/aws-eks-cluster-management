@@ -1,0 +1,451 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# List Pod Identity associations and IAM roles relevant to this cluster
+# with reconciliation status against cluster.yaml.
+#
+# Two tables:
+#   1. Associations — declared ∪ live. Status reveals drift, orphans,
+#      partial-tag, foreign-tag, and externals.
+#   2. Roles — declared ∪ live-association-roles ∪ tag-searched ours.
+#      TYPE column distinguishes managed (cat-1) / byo (cat-2 declared
+#      with no policy JSON file) / external. POLICY column compares
+#      live inline policy to ${IAM_ROLE_POLICY_DIR}/<key>.json for
+#      managed-cat-1 only.
+#
+# Sort order: action-priority (missing > drift-* > partial > orphan >
+# foreign > external > in-sync), alphabetical within rank.
+#
+# Read-only. Heavy on AWS calls (1 list, N describe, 1 tag-search,
+# M get-role + list-role-tags, K get-role-policy); safe on any
+# cluster.
+#
+# Bash 3.2 compatible: parallel arrays + linear-search helpers in
+# place of associative maps.
+#
+# Usage: cluster list pod-identities
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: This command takes no arguments" >&2
+  echo "Usage: cluster list pod-identities" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+IAM_ROLE_POLICY_DIR="${IAM_ROLE_POLICY_DIR:-/kd/iam}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+# Action-priority rank for sort within table:
+#   1 missing, 2 drift-*, 3 partial, 4 orphan, 5 foreign,
+#   6 external, 7 in-sync
+_status_rank() {
+  case "$1" in
+    missing)       echo 1 ;;
+    drift-ns|drift-sa|drift-arn|drift-key-tag|drift-policy|drift-tag) echo 2 ;;
+    partial)       echo 3 ;;
+    orphan)        echo 4 ;;
+    foreign)       echo 5 ;;
+    external)      echo 6 ;;
+    in-sync)       echo 7 ;;
+    *)             echo 9 ;;
+  esac
+}
+
+# =============================================================================
+# Declared state from cluster.yaml
+# =============================================================================
+decl_keys=()
+decl_ns=()
+decl_sa=()
+decl_role_arn=()
+decl_role_name=()
+decl_category=()    # 1 = managed (policy JSON present), 2 = byo
+
+while IFS= read -r k; do
+  [[ -n "${k}" && "${k}" != "null" ]] || continue
+  d=$(yq -o=json ".iam.podIdentityAssociations[] | select(.tags[\"kaptain.org/association-key\"] == \"${k}\")" "${CLUSTER_CONFIG}")
+  decl_keys+=("${k}")
+  decl_ns+=("$(echo "${d}" | yq -p=json -r '.namespace')")
+  decl_sa+=("$(echo "${d}" | yq -p=json -r '.serviceAccountName')")
+  arn_val=$(echo "${d}" | yq -p=json -r '.roleARN')
+  decl_role_arn+=("${arn_val}")
+  decl_role_name+=("${arn_val##*/}")
+  if [[ -f "${IAM_ROLE_POLICY_DIR}/${k}.json" ]]; then
+    decl_category+=("1")
+  else
+    decl_category+=("2")
+  fi
+done < <(yq -r '.iam.podIdentityAssociations[]?.tags["kaptain.org/association-key"] // ""' "${CLUSTER_CONFIG}")
+
+n_decl=${#decl_keys[@]}
+
+# =============================================================================
+# Live state: associations
+# =============================================================================
+live_aids=()
+live_keys=()           # association-key tag value (possibly empty)
+live_ns=()
+live_sa=()
+live_role_arn=()
+live_managed_by=()     # managed-by tag value (possibly empty)
+
+while IFS= read -r aid; do
+  [[ -z "${aid}" ]] && continue
+  detail=$(aws eks describe-pod-identity-association \
+    --cluster-name "${cluster_name}" --association-id "${aid}" --output json)
+  live_aids+=("${aid}")
+  live_keys+=("$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/association-key"] // ""')")
+  live_ns+=("$(echo "${detail}" | yq -p=json -r '.association.namespace')")
+  live_sa+=("$(echo "${detail}" | yq -p=json -r '.association.serviceAccount')")
+  live_role_arn+=("$(echo "${detail}" | yq -p=json -r '.association.roleArn')")
+  live_managed_by+=("$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/managed-by"] // ""')")
+done < <(aws eks list-pod-identity-associations \
+    --cluster-name "${cluster_name}" --output json \
+  | yq -p=json -r '.associations[]?.associationId')
+
+n_live=${#live_aids[@]}
+
+# =============================================================================
+# Tag-searched roles (managed-by=<cluster>)
+# =============================================================================
+tagged_role_names=()
+while IFS= read -r role_arn; do
+  [[ -z "${role_arn}" ]] && continue
+  tagged_role_names+=("${role_arn##*/}")
+done < <(aws resourcegroupstaggingapi get-resources \
+  --tag-filters "Key=kaptain.org/managed-by,Values=${cluster_name}" \
+  --resource-type-filters iam:role \
+  --output json \
+  | yq -p=json -r '.ResourceTagMappingList[]?.ResourceARN')
+
+# =============================================================================
+# Compute association rows
+# =============================================================================
+assoc_row_keys=()
+assoc_row_status=()
+assoc_row_decl=()
+assoc_row_live_id=()
+assoc_row_ns=()
+assoc_row_sa=()
+assoc_row_role=()
+
+consumed_live_aids=" "
+
+# Pass 1: declared rows, joined with live where key + managed-by match.
+for ((i = 0; i < n_decl; i++)); do
+  k="${decl_keys[${i}]}"
+  match=-1
+  for ((j = 0; j < n_live; j++)); do
+    if [[ "${live_keys[${j}]}" == "${k}" \
+       && "${live_managed_by[${j}]}" == "${cluster_name}" ]]; then
+      match=${j}; break
+    fi
+  done
+  if [[ "${match}" -ge 0 ]]; then
+    consumed_live_aids+="${live_aids[${match}]} "
+    if [[ "${live_ns[${match}]}" != "${decl_ns[${i}]}" ]]; then
+      st="drift-ns"
+    elif [[ "${live_sa[${match}]}" != "${decl_sa[${i}]}" ]]; then
+      st="drift-sa"
+    elif [[ "${live_role_arn[${match}]}" != "${decl_role_arn[${i}]}" ]]; then
+      st="drift-arn"
+    else
+      st="in-sync"
+    fi
+    assoc_row_keys+=("${k}")
+    assoc_row_status+=("${st}")
+    assoc_row_decl+=("yes")
+    assoc_row_live_id+=("${live_aids[${match}]}")
+    assoc_row_ns+=("${live_ns[${match}]}")
+    assoc_row_sa+=("${live_sa[${match}]}")
+    assoc_row_role+=("${live_role_arn[${match}]##*/}")
+  else
+    assoc_row_keys+=("${k}")
+    assoc_row_status+=("missing")
+    assoc_row_decl+=("yes")
+    assoc_row_live_id+=("-")
+    assoc_row_ns+=("${decl_ns[${i}]}")
+    assoc_row_sa+=("${decl_sa[${i}]}")
+    assoc_row_role+=("${decl_role_name[${i}]}")
+  fi
+done
+
+# Pass 2: live rows not consumed by Pass 1.
+for ((j = 0; j < n_live; j++)); do
+  if [[ "${consumed_live_aids}" == *" ${live_aids[${j}]} "* ]]; then
+    continue
+  fi
+  k="${live_keys[${j}]}"
+  mb="${live_managed_by[${j}]}"
+  if [[ "${mb}" == "${cluster_name}" ]]; then
+    if [[ -z "${k}" ]]; then
+      st="partial"
+    else
+      st="orphan"
+    fi
+  elif [[ -z "${mb}" ]]; then
+    st="external"
+  else
+    st="foreign"
+  fi
+  display_key="${k}"
+  [[ -z "${display_key}" ]] && display_key="${live_aids[${j}]}"
+  assoc_row_keys+=("${display_key}")
+  assoc_row_status+=("${st}")
+  assoc_row_decl+=("no")
+  assoc_row_live_id+=("${live_aids[${j}]}")
+  assoc_row_ns+=("${live_ns[${j}]}")
+  assoc_row_sa+=("${live_sa[${j}]}")
+  assoc_row_role+=("${live_role_arn[${j}]##*/}")
+done
+
+# =============================================================================
+# Compute role rows: declared ∪ live-association-roles ∪ tag-searched.
+# =============================================================================
+role_set=" "
+role_names=()
+for ((i = 0; i < n_decl; i++)); do
+  rn="${decl_role_name[${i}]}"
+  if [[ "${role_set}" != *" ${rn} "* ]]; then
+    role_set+="${rn} "
+    role_names+=("${rn}")
+  fi
+done
+for ((j = 0; j < n_live; j++)); do
+  rn="${live_role_arn[${j}]##*/}"
+  if [[ "${role_set}" != *" ${rn} "* ]]; then
+    role_set+="${rn} "
+    role_names+=("${rn}")
+  fi
+done
+for rn in ${tagged_role_names[@]+"${tagged_role_names[@]}"}; do
+  if [[ "${role_set}" != *" ${rn} "* ]]; then
+    role_set+="${rn} "
+    role_names+=("${rn}")
+  fi
+done
+
+role_row_names=()
+role_row_status=()
+role_row_type=()
+role_row_decl=()
+role_row_tagkey=()
+role_row_refs=()
+role_row_policy=()
+
+for rn in ${role_names[@]+"${role_names[@]}"}; do
+  di=-1
+  for ((i = 0; i < n_decl; i++)); do
+    if [[ "${decl_role_name[${i}]}" == "${rn}" ]]; then
+      di=${i}; break
+    fi
+  done
+
+  refs=0
+  for ((j = 0; j < n_live; j++)); do
+    if [[ "${live_role_arn[${j}]##*/}" == "${rn}" ]]; then
+      refs=$((refs + 1))
+    fi
+  done
+
+  live_exists=false
+  role_mb=""
+  role_ak=""
+  gr_err=$(mktemp)
+  if aws iam get-role --role-name "${rn}" --output json >/dev/null 2>"${gr_err}"; then
+    live_exists=true
+    tj=$(aws iam list-role-tags --role-name "${rn}" --output json)
+    role_mb=$(echo "${tj}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/managed-by") | .Value')
+    role_ak=$(echo "${tj}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/association-key") | .Value')
+  elif ! grep -q "NoSuchEntity" "${gr_err}"; then
+    # Cross-account or perms issue; treat as not-live (best-effort).
+    live_exists=false
+  fi
+  rm -f "${gr_err}"
+
+  if [[ "${di}" -ge 0 && "${decl_category[${di}]}" == "1" ]]; then
+    ty="managed"
+  elif [[ "${di}" -ge 0 ]]; then
+    ty="byo"
+  elif [[ "${role_mb}" == "${cluster_name}" ]]; then
+    ty="managed"
+  else
+    ty="external"
+  fi
+
+  policy="n/a"
+  if [[ "${di}" -ge 0 ]]; then
+    if [[ "${live_exists}" == "false" ]]; then
+      st="missing"
+    elif [[ "${ty}" == "byo" ]]; then
+      st="in-sync"
+    elif [[ "${role_mb}" != "${cluster_name}" ]]; then
+      st="drift-tag"
+    elif [[ "${role_ak}" != "${decl_keys[${di}]}" ]]; then
+      st="drift-tag"
+    else
+      policy_file="${IAM_ROLE_POLICY_DIR}/${decl_keys[${di}]}.json"
+      gpr_out=$(mktemp); gpr_err=$(mktemp)
+      have_policy=false
+      live_doc=""
+      if aws iam get-role-policy --role-name "${rn}" --policy-name kaptain --output json >"${gpr_out}" 2>"${gpr_err}"; then
+        have_policy=true
+        live_doc=$(yq -p=json -o=json '.PolicyDocument' "${gpr_out}")
+      fi
+      rm -f "${gpr_err}" "${gpr_out}"
+      declared_doc=$(yq -o=json '.' "${policy_file}")
+      if [[ "${have_policy}" == "false" ]]; then
+        st="drift-policy"
+        policy="absent"
+      elif [[ "$(echo "${declared_doc}" | yq -p=json -o=json 'sort_keys(..)')" \
+              != "$(echo "${live_doc}" | yq -p=json -o=json 'sort_keys(..)')" ]]; then
+        st="drift-policy"
+        policy="differs"
+      else
+        st="in-sync"
+        policy="match"
+      fi
+    fi
+  else
+    if [[ "${live_exists}" == "false" ]]; then
+      # Referenced by a live association but role itself isn't visible;
+      # likely cross-account or stale list. Mark external.
+      st="external"
+    elif [[ "${role_mb}" == "${cluster_name}" ]]; then
+      st="orphan"
+    elif [[ -n "${role_mb}" ]]; then
+      st="foreign"
+    else
+      st="external"
+    fi
+  fi
+
+  display_tagkey="${role_ak}"
+  [[ -z "${display_tagkey}" ]] && display_tagkey="-"
+
+  display_refs="${refs}"
+  if [[ "${st}" == "missing" ]]; then
+    display_refs="-"
+  fi
+
+  role_row_names+=("${rn}")
+  role_row_status+=("${st}")
+  role_row_type+=("${ty}")
+  if [[ "${di}" -ge 0 ]]; then
+    role_row_decl+=("yes")
+  else
+    role_row_decl+=("no")
+  fi
+  role_row_tagkey+=("${display_tagkey}")
+  role_row_refs+=("${display_refs}")
+  role_row_policy+=("${policy}")
+done
+
+# =============================================================================
+# Sort + print
+# =============================================================================
+_print_assoc_table() {
+  local fmt="%-30s  %-13s  %-4s  %-22s  %-20s  %-20s  %s\n"
+  # shellcheck disable=SC2059 # format string is a constant local, not user input
+  printf "${fmt}" "KEY" "STATUS" "DECL" "LIVE-ID" "NS" "SA" "ROLE"
+  local n=${#assoc_row_keys[@]}
+  local -a sorted_idx=()
+  # Build (rank, key, idx) triples in a parallel structure, then linear-sort.
+  local ranks=() keys=()
+  local i
+  for ((i = 0; i < n; i++)); do
+    ranks+=("$(_status_rank "${assoc_row_status[${i}]}")")
+    keys+=("${assoc_row_keys[${i}]}")
+    sorted_idx+=("${i}")
+  done
+  # Insertion sort by (rank, key)
+  local j idx_i idx_j
+  for ((i = 1; i < n; i++)); do
+    j=${i}
+    while [[ ${j} -gt 0 ]]; do
+      idx_i=${sorted_idx[j - 1]}
+      idx_j=${sorted_idx[${j}]}
+      if [[ "${ranks[${idx_i}]}" -gt "${ranks[${idx_j}]}" \
+         || ( "${ranks[${idx_i}]}" -eq "${ranks[${idx_j}]}" \
+              && "${keys[${idx_i}]}" > "${keys[${idx_j}]}" ) ]]; then
+        local tmp=${sorted_idx[${j}]}
+        sorted_idx[j]=${sorted_idx[j - 1]}
+        sorted_idx[j - 1]=${tmp}
+        j=$((j - 1))
+      else
+        break
+      fi
+    done
+  done
+  for i in ${sorted_idx[@]+"${sorted_idx[@]}"}; do
+    # shellcheck disable=SC2059 # same format string as above
+    printf "${fmt}" \
+      "${assoc_row_keys[${i}]}" \
+      "${assoc_row_status[${i}]}" \
+      "${assoc_row_decl[${i}]}" \
+      "${assoc_row_live_id[${i}]}" \
+      "${assoc_row_ns[${i}]}" \
+      "${assoc_row_sa[${i}]}" \
+      "${assoc_row_role[${i}]}"
+  done
+}
+
+_print_role_table() {
+  local fmt="%-50s  %-13s  %-8s  %-4s  %-20s  %-4s  %s\n"
+  # shellcheck disable=SC2059 # format string is a constant local, not user input
+  printf "${fmt}" "NAME" "STATUS" "TYPE" "DECL" "TAG-KEY" "REFS" "POLICY"
+  local n=${#role_row_names[@]}
+  local -a sorted_idx=()
+  local ranks=() names=()
+  local i
+  for ((i = 0; i < n; i++)); do
+    ranks+=("$(_status_rank "${role_row_status[${i}]}")")
+    names+=("${role_row_names[${i}]}")
+    sorted_idx+=("${i}")
+  done
+  local j idx_i idx_j
+  for ((i = 1; i < n; i++)); do
+    j=${i}
+    while [[ ${j} -gt 0 ]]; do
+      idx_i=${sorted_idx[j - 1]}
+      idx_j=${sorted_idx[${j}]}
+      if [[ "${ranks[${idx_i}]}" -gt "${ranks[${idx_j}]}" \
+         || ( "${ranks[${idx_i}]}" -eq "${ranks[${idx_j}]}" \
+              && "${names[${idx_i}]}" > "${names[${idx_j}]}" ) ]]; then
+        local tmp=${sorted_idx[${j}]}
+        sorted_idx[j]=${sorted_idx[j - 1]}
+        sorted_idx[j - 1]=${tmp}
+        j=$((j - 1))
+      else
+        break
+      fi
+    done
+  done
+  for i in ${sorted_idx[@]+"${sorted_idx[@]}"}; do
+    # shellcheck disable=SC2059 # same format string as above
+    printf "${fmt}" \
+      "${role_row_names[${i}]}" \
+      "${role_row_status[${i}]}" \
+      "${role_row_type[${i}]}" \
+      "${role_row_decl[${i}]}" \
+      "${role_row_tagkey[${i}]}" \
+      "${role_row_refs[${i}]}" \
+      "${role_row_policy[${i}]}"
+  done
+}
+
+echo "Pod Identity Associations for cluster '${cluster_name}':"
+echo ""
+_print_assoc_table
+echo ""
+echo "Pod Identity Roles for cluster '${cluster_name}':"
+echo ""
+_print_role_table
