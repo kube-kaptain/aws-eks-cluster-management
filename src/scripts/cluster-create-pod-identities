@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Create every pod identity association declared in cluster.yaml.
+#
+# Iterates each kaptain.org/association-key in
+# iam.podIdentityAssociations[] and invokes cluster-create-pod-identity
+# per key. Collects failures; exits non-zero if any key failed.
+#
+# Usage: cluster create pod-identities [--yes | --dry-run]
+set -euo pipefail
+
+confirm=true
+dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes)     confirm=false; shift ;;
+    --dry-run) dry_run=true;  shift ;;
+    *)
+      echo "ERROR: Unknown argument '$1'" >&2
+      echo "Usage: cluster create pod-identities [--yes | --dry-run]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "${dry_run}" == "true" && "${confirm}" == "false" ]]; then
+  echo "ERROR: --yes and --dry-run are mutually exclusive" >&2
+  exit 1
+fi
+
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+
+addon_declared=false
+if yq -r '.addons[]?.name' "${CLUSTER_CONFIG}" \
+  | grep -qx 'eks-pod-identity-agent'; then
+  addon_declared=true
+fi
+if [[ "${addon_declared}" != "true" ]]; then
+  echo "pod-identity-agent addon not declared in cluster.yaml; skipping"
+  exit 0
+fi
+
+keys=$(yq -r '.iam.podIdentityAssociations[]?.tags["kaptain.org/association-key"] // ""' "${CLUSTER_CONFIG}" | grep -v '^$' || true)
+
+if [[ -z "${keys}" ]]; then
+  echo "No pod identity associations declared in ${CLUSTER_CONFIG}, nothing to create."
+  exit 0
+fi
+
+plan_buffer=$(mktemp)
+trap 'rm -f "${plan_buffer}"' EXIT
+
+plan_failures=()
+nothing_to_do_count=0
+total_keys=0
+while IFS= read -r key; do
+  [[ -z "${key}" ]] && continue
+  total_keys=$((total_keys+1))
+  if per_key=$("${CLUSTER_SCRIPT_DIR}/cluster-create-pod-identity" "${key}" --dry-run 2>&1); then
+    echo "${per_key}" >> "${plan_buffer}"
+    echo "" >> "${plan_buffer}"
+    if [[ "${per_key}" == *"already in the desired state"* ]]; then
+      nothing_to_do_count=$((nothing_to_do_count+1))
+    fi
+  else
+    plan_failures+=("${key}")
+    echo "${per_key}" >> "${plan_buffer}"
+    echo "" >> "${plan_buffer}"
+  fi
+done <<< "${keys}"
+
+if [[ ${#plan_failures[@]} -gt 0 ]]; then
+  echo "Combined plan (with failures):"
+  cat "${plan_buffer}"
+  echo "Plan computation failed for:"
+  for f in "${plan_failures[@]}"; do echo "  - ${f}"; done
+  exit 1
+fi
+
+if [[ "${nothing_to_do_count}" -eq "${total_keys}" ]]; then
+  echo "All ${total_keys} declared pod identities are already in the desired state. Nothing to do."
+  exit 0
+fi
+
+echo "Combined plan:"
+cat "${plan_buffer}"
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run complete. No changes were made."
+  exit 0
+fi
+
+if [[ "${confirm}" == "true" ]]; then
+  printf "Type 'yes' to proceed with the plan above: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+exec_failures=()
+while IFS= read -r key; do
+  [[ -z "${key}" ]] && continue
+  echo ""
+  echo "--- Executing: ${key} ---"
+  if ! "${CLUSTER_SCRIPT_DIR}/cluster-create-pod-identity" "${key}" --yes; then
+    exec_failures+=("${key}")
+  fi
+done <<< "${keys}"
+
+if [[ ${#exec_failures[@]} -gt 0 ]]; then
+  echo ""
+  echo "Failures:"
+  for f in "${exec_failures[@]}"; do echo "  - ${f}"; done
+  exit 1
+fi
+
+echo ""
+echo "All declared pod identities are in the desired state."

@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Delete one EKS Pod Identity association and (if managed) its IAM role.
+#
+# Strict tag-gated: refuses to touch any resource not carrying both
+# kaptain.org/managed-by=${cluster_name} AND kaptain.org/association-key=${key}.
+#
+# Candidate IAM roles come from three sources, all tag-verified before
+# deletion:
+#   1. The live association's roleArn (when an association exists).
+#   2. The roleARN in cluster.yaml's entry for this key (catches orphan
+#      roles left behind by a previously-failed create).
+#   3. resourcegroupstaggingapi role search by tag pair (catches roles
+#      where both other pointers are gone — association manually
+#      deleted AND yaml entry removed). Requires tag:GetResources IAM
+#      permission; eventual-consistency lag may delay visibility of
+#      newly-created roles by a few minutes.
+#
+# All candidates are deduped, then tag-verified independently. Any role
+# with both ownership tags is deleted; anything else is left alone.
+#
+# Usage: cluster delete pod-identity <key> [--yes | --dry-run]
+set -euo pipefail
+
+key=""
+confirm=true
+dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes)     confirm=false; shift ;;
+    --dry-run) dry_run=true;  shift ;;
+    --*)
+      echo "ERROR: Unknown flag '$1'" >&2
+      echo "Usage: cluster delete pod-identity <key> [--yes | --dry-run]" >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "${key}" ]]; then
+        echo "ERROR: Multiple keys passed; only one is allowed" >&2
+        exit 1
+      fi
+      key="$1"; shift
+      ;;
+  esac
+done
+
+if [[ -z "${key}" ]]; then
+  echo "ERROR: <key> is required" >&2
+  echo "Usage: cluster delete pod-identity <key> [--yes | --dry-run]" >&2
+  exit 1
+fi
+
+if [[ "${dry_run}" == "true" && "${confirm}" == "false" ]]; then
+  echo "ERROR: --yes and --dry-run are mutually exclusive" >&2
+  exit 1
+fi
+
+CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
+if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
+  echo "ERROR: ${CLUSTER_CONFIG} not found" >&2
+  exit 1
+fi
+cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
+
+addon_declared=false
+if yq -r '.addons[]?.name' "${CLUSTER_CONFIG}" \
+  | grep -qx 'eks-pod-identity-agent'; then
+  addon_declared=true
+fi
+if [[ "${addon_declared}" != "true" ]]; then
+  echo "pod-identity-agent addon not declared in cluster.yaml; skipping"
+  exit 0
+fi
+
+target_assoc_id=""
+target_assoc_role_arn=""
+assoc_ids=$(aws eks list-pod-identity-associations \
+  --cluster-name "${cluster_name}" \
+  --output json | yq -p=json -r '.associations[]?.associationId')
+while IFS= read -r aid; do
+  [[ -z "${aid}" ]] && continue
+  detail=$(aws eks describe-pod-identity-association \
+    --cluster-name "${cluster_name}" --association-id "${aid}" --output json)
+  m=$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/managed-by"] // ""')
+  k=$(echo "${detail}" | yq -p=json -r '.association.tags["kaptain.org/association-key"] // ""')
+  if [[ "${m}" == "${cluster_name}" && "${k}" == "${key}" ]]; then
+    target_assoc_id="${aid}"
+    target_assoc_role_arn=$(echo "${detail}" | yq -p=json -r '.association.roleArn')
+    break
+  fi
+done <<< "${assoc_ids}"
+
+# Build candidate role names from three sources, deduped.
+candidate_role_names=()
+add_candidate() {
+  local cand="$1"
+  [[ -z "${cand}" ]] && return
+  local existing
+  for existing in ${candidate_role_names[@]+"${candidate_role_names[@]}"}; do
+    [[ "${existing}" == "${cand}" ]] && return
+  done
+  candidate_role_names+=("${cand}")
+}
+
+# Source 1: live association's roleArn.
+if [[ -n "${target_assoc_role_arn}" ]]; then
+  add_candidate "${target_assoc_role_arn##*/}"
+fi
+
+# Source 2: cluster.yaml declared roleARN for this key.
+declared=$(yq -o=json ".iam.podIdentityAssociations[]? | select(.tags[\"kaptain.org/association-key\"] == \"${key}\")" "${CLUSTER_CONFIG}")
+if [[ -n "${declared}" && "${declared}" != "null" ]]; then
+  declared_role_arn=$(echo "${declared}" | yq -p=json -r '.roleARN')
+  add_candidate "${declared_role_arn##*/}"
+fi
+
+# Source 3: roles tagged with our ownership pair. Authoritative when
+# both other pointers are gone (yaml emptied + association deleted).
+while IFS= read -r role_arn; do
+  [[ -z "${role_arn}" ]] && continue
+  add_candidate "${role_arn##*/}"
+done < <(aws resourcegroupstaggingapi get-resources \
+  --tag-filters "Key=kaptain.org/managed-by,Values=${cluster_name}" \
+                "Key=kaptain.org/association-key,Values=${key}" \
+  --resource-type-filters iam:role \
+  --output json \
+  | yq -p=json -r '.ResourceTagMappingList[]?.ResourceARN')
+
+# Tag-gate each candidate: only delete roles carrying BOTH ownership
+# tags with matching values. Defense in depth — the tag-search source
+# already guarantees this, but live/yaml sources don't.
+target_role_names=()
+for cand in ${candidate_role_names[@]+"${candidate_role_names[@]}"}; do
+  gr_err=$(mktemp)
+  if aws iam get-role --role-name "${cand}" --output json >/dev/null 2>"${gr_err}"; then
+    tags_json=$(aws iam list-role-tags --role-name "${cand}" --output json)
+    mb=$(echo "${tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/managed-by") | .Value')
+    ak=$(echo "${tags_json}" | yq -p=json -r '.Tags[] | select(.Key == "kaptain.org/association-key") | .Value')
+    if [[ "${mb}" == "${cluster_name}" && "${ak}" == "${key}" ]]; then
+      target_role_names+=("${cand}")
+    fi
+  elif ! grep -q "NoSuchEntity" "${gr_err}"; then
+    cat "${gr_err}" >&2
+    rm -f "${gr_err}"
+    exit 1
+  fi
+  rm -f "${gr_err}"
+done
+
+if [[ -z "${target_assoc_id}" && ${#target_role_names[@]} -eq 0 ]]; then
+  echo "Pod identity '${key}' not found on cluster. Nothing to delete."
+  exit 0
+fi
+
+echo "Plan for pod-identity '${key}':"
+if [[ -n "${target_assoc_id}" ]]; then
+  echo "  - delete association ${target_assoc_id}"
+fi
+for rn in ${target_role_names[@]+"${target_role_names[@]}"}; do
+  echo "  - delete inline policy 'kaptain' from IAM role '${rn}'"
+  echo "  - delete IAM role '${rn}'"
+done
+echo ""
+
+if [[ "${dry_run}" == "true" ]]; then
+  echo "Dry run complete. No changes were made."
+  exit 0
+fi
+
+if [[ "${confirm}" == "true" ]]; then
+  printf "Type 'yes' to proceed: "
+  read -r answer
+  if [[ "${answer}" != "yes" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+if [[ -n "${target_assoc_id}" ]]; then
+  aws eks delete-pod-identity-association \
+    --cluster-name "${cluster_name}" \
+    --association-id "${target_assoc_id}" \
+    >/dev/null
+fi
+
+for rn in ${target_role_names[@]+"${target_role_names[@]}"}; do
+  drp_err=$(mktemp)
+  if ! aws iam delete-role-policy \
+       --role-name "${rn}" \
+       --policy-name kaptain 2>"${drp_err}"; then
+    if ! grep -q "NoSuchEntity" "${drp_err}"; then
+      cat "${drp_err}" >&2
+      rm -f "${drp_err}"
+      exit 1
+    fi
+  fi
+  rm -f "${drp_err}"
+  aws iam delete-role --role-name "${rn}" >/dev/null
+done
+
+echo "Pod identity '${key}' deleted."

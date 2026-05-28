@@ -39,6 +39,8 @@ router without arguments to see its available sub-commands.
 | `cluster create addons [--force]`             | Create all EKS addons defined in cluster.yaml                              |
 | `cluster create access-entry <arn> [options]` | Create a single EKS access entry                                           |
 | `cluster create access-entries`               | Create all missing access entries defined in cluster.yaml                  |
+| `cluster create pod-identity <key>`           | Idempotently create one pod identity association (and its role) by key     |
+| `cluster create pod-identities`               | Idempotently create all declared pod identity associations and roles       |
 | `cluster bootstrap-cilium`                    | Bootstrap Cilium CNI on a newly created EKS cluster. Not yet implemented.  |
 
 ### delete
@@ -53,6 +55,8 @@ router without arguments to see its available sub-commands.
 | `cluster delete addons [--yes]`                    | Delete all addons not defined in cluster.yaml        |
 | `cluster delete access-entry <arn>`                | Delete a single EKS access entry                     |
 | `cluster delete access-entries [--yes]`            | Delete access entries not defined in cluster.yaml    |
+| `cluster delete pod-identity <key>`                | Delete one pod identity association and its role (greedy, finds orphan roles by tag) |
+| `cluster delete pod-identities [--yes]`            | Drift cleanup: delete ours-tagged associations and roles not declared in cluster.yaml |
 
 
 ## Information
@@ -68,6 +72,7 @@ router without arguments to see its available sub-commands.
 | `cluster list nodes`                      | List Kubernetes nodes                                                         |
 | `cluster list addons`                     | List EKS addons                                                               |
 | `cluster list access-entries`             | List EKS access entries                                                       |
+| `cluster list pod-identities`             | List pod identity associations and IAM roles with reconciliation status vs cluster.yaml |
 | `cluster list insights`                   | List EKS insights for the cluster                                             |
 | `cluster list stacks`                     | List CloudFormation stacks managed by eksctl                                  |
 | `cluster list all-addons-all-versions`    | List all available addon versions compatible with the current cluster         |
@@ -109,6 +114,7 @@ router without arguments to see its available sub-commands.
 | `cluster upgrade controlplane [--dry-run]`                | Upgrade the EKS control plane to match cluster.yaml             |
 | `cluster upgrade addon <name> [target-version] [--force]` | Upgrade a single EKS addon                                      |
 | `cluster upgrade addons [--force]`                        | Upgrade all EKS addons as defined in cluster.yaml               |
+| `cluster upgrade pod-identities [--yes \| --dry-run]`     | Reconcile pod identity associations and roles to cluster.yaml   |
 | `cluster upgrade cluster-auto-mode [--dry-run]`           | Reconcile EKS auto mode toggle to match cluster.yaml            |
 | `cluster upgrade cluster-endpoints [--dry-run]`           | Reconcile cluster endpoint access config to match cluster.yaml  |
 | `cluster upgrade cluster-logging [--dry-run]`             | Reconcile control plane logging config to match cluster.yaml    |
