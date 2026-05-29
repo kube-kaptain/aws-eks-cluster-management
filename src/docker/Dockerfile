@@ -1,4 +1,4 @@
-FROM debian:trixie-20260112-slim
+FROM debian:trixie-20260518-slim
 # Always use the most specific tag possible
 
 # Architecture from build system (used for binary downloads)
