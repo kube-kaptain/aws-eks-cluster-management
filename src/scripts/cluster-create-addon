@@ -47,7 +47,46 @@ fi
 
 cluster_name=$(yq '.metadata.name' "${CLUSTER_CONFIG}")
 
+# Validate the addon is defined in cluster.yaml
+match=$(yq ".addons[] | select(.name == \"${addon_name}\") | .name" "${CLUSTER_CONFIG}")
+if [[ -z "${match}" || "${match}" == "null" ]]; then
+  echo "ERROR: Addon '${addon_name}' not found in ${CLUSTER_CONFIG}" >&2
+  echo "" >&2
+  echo "Available addons:" >&2
+  yq '.addons[].name' "${CLUSTER_CONFIG}" | sed 's/^/  /' >&2
+  exit 1
+fi
+
+# eksctl rejects -f together with --name, so this command builds the call from
+# flags and can only carry fields we explicitly map. Reject any addon that
+# defines more than name/version/serviceAccountRoleARN rather than silently
+# dropping config (e.g. configurationValues, resolveConflicts, tags).
+unsupported=$(yq ".addons[] | select(.name == \"${addon_name}\") | keys | .[]" "${CLUSTER_CONFIG}" \
+  | grep -vxE 'name|version|serviceAccountRoleARN' || true)
+if [[ -n "${unsupported}" ]]; then
+  echo "ERROR: Addon '${addon_name}' defines field(s) this command cannot carry:" >&2
+  while IFS= read -r field; do
+    echo "  ${field}" >&2
+  done <<< "${unsupported}"
+  echo "  'cluster create addon' supports only: name, version, serviceAccountRoleARN" >&2
+  echo "  Create it with eksctl directly to apply the full config, e.g.:" >&2
+  echo "    eksctl create addon --cluster ${cluster_name} --name ${addon_name} --config-values '<values>'" >&2
+  exit 1
+fi
+
+# version: pass only when pinned; 'latest' (or unset) lets eksctl pick the latest
+version=$(yq ".addons[] | select(.name == \"${addon_name}\") | .version // \"\"" "${CLUSTER_CONFIG}")
+sa_role=$(yq ".addons[] | select(.name == \"${addon_name}\") | .serviceAccountRoleARN // \"\"" "${CLUSTER_CONFIG}")
+
+addon_args=(--cluster "${cluster_name}" --name "${addon_name}")
+if [[ -n "${version}" && "${version}" != "latest" && "${version}" != "null" ]]; then
+  addon_args+=(--version "${version}")
+fi
+if [[ -n "${sa_role}" && "${sa_role}" != "null" ]]; then
+  addon_args+=(--service-account-role-arn "${sa_role}")
+fi
+
 echo "Creating addon ${addon_name} on cluster ${cluster_name}..."
 # shellcheck disable=SC2086 # force must word-split when set, disappear when empty
-eksctl create addon -f "${CLUSTER_CONFIG}" --name "${addon_name}" ${force}
+eksctl create addon "${addon_args[@]}" ${force}
 echo "Addon ${addon_name} created successfully."
