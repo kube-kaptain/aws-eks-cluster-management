@@ -26,6 +26,8 @@ case "${1:-}" in
     ;;
 esac
 
+CLUSTER_SCRIPT_DIR="${CLUSTER_SCRIPT_DIR:?CLUSTER_SCRIPT_DIR must be set}"
+
 CLUSTER_CONFIG="${CLUSTER_CONFIG:?CLUSTER_CONFIG must be set}"
 
 if [[ ! -f "${CLUSTER_CONFIG}" ]]; then
@@ -45,7 +47,7 @@ names=()
 for addon in ${addon_names}; do
   echo "Creating addon: ${addon}"
   # shellcheck disable=SC2086 # force must word-split when set, disappear when empty
-  eksctl create addon -f "${CLUSTER_CONFIG}" --name "${addon}" ${force} &
+  "${CLUSTER_SCRIPT_DIR}/cluster-create-addon" "${addon}" ${force} &
   pids+=($!)
   names+=("${addon}")
 done

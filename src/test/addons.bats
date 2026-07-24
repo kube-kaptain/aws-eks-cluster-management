@@ -34,8 +34,9 @@ addons:
     version: latest
 YAML
 
-  # Mock eksctl: handles "get addons" and "create addon"
+  # Mock eksctl: "get addons" for delete tests; record full "create addon" args
   export CREATED_LOG="${BATS_TEST_TMPDIR}/created.log"
+  export EKSCTL_LOG="${BATS_TEST_TMPDIR}/eksctl.log"
   cat > "${BATS_TEST_TMPDIR}/bin/eksctl" <<MOCK
 #!/usr/bin/env bash
 if [[ "\$1" == "get" ]]; then
@@ -60,13 +61,7 @@ if [[ "\$1" == "get" ]]; then
   Version: v0.1.0
 YAML
 elif [[ "\$1" == "create" ]]; then
-  for arg in "\$@"; do
-    if [[ "\${prev:-}" == "--name" ]]; then
-      echo "\${arg}" >> "${CREATED_LOG}"
-      break
-    fi
-    prev="\${arg}"
-  done
+  echo "\$*" >> "${EKSCTL_LOG}"
 fi
 MOCK
   chmod +x "${BATS_TEST_TMPDIR}/bin/eksctl"
@@ -79,6 +74,16 @@ echo "\$1" >> "${DELETED_LOG}"
 echo "Deleted addon \$1"
 MOCK
   chmod +x "${CLUSTER_SCRIPT_DIR}/cluster-delete-addon"
+
+  # Mock cluster-create-addon: record delegated create calls (used by plural tests)
+  export FORCE_LOG="${BATS_TEST_TMPDIR}/force.log"
+  cat > "${CLUSTER_SCRIPT_DIR}/cluster-create-addon" <<MOCK
+#!/usr/bin/env bash
+echo "\$1" >> "${CREATED_LOG}"
+for a in "\$@"; do [[ "\$a" == "--force" ]] && echo "\$1" >> "${FORCE_LOG}"; done
+echo "Addon \$1 created"
+MOCK
+  chmod +x "${CLUSTER_SCRIPT_DIR}/cluster-create-addon"
 }
 
 # ====================================================================
@@ -228,4 +233,114 @@ YAML
   [[ "${status}" -eq 0 ]]
   [[ "${output}" == *"No addons defined"* ]]
   [[ ! -f "${CREATED_LOG}" ]]
+}
+
+@test "cluster-create-addons: passes --force through to the singular" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addons" --force
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ -f "${FORCE_LOG}" ]]
+  [[ $(wc -l < "${FORCE_LOG}" | tr -d ' ') -eq 5 ]]
+}
+
+# ====================================================================
+# cluster-create-addon: single addon via --cluster/--name
+# ====================================================================
+
+@test "cluster-create-addon: uses --cluster and --name, not -f" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" vpc-cni
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ -f "${EKSCTL_LOG}" ]]
+  args=$(< "${EKSCTL_LOG}")
+  echo "ARGS: ${args}"
+  [[ "${args}" == *"--cluster test-cluster"* ]]
+  [[ "${args}" == *"--name vpc-cni"* ]]
+  [[ "${args}" != *"-f "* ]]
+}
+
+@test "cluster-create-addon: omits --version when version is latest" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" vpc-cni
+  [[ "${status}" -eq 0 ]]
+  [[ "$(< "${EKSCTL_LOG}")" != *"--version"* ]]
+}
+
+@test "cluster-create-addon: passes --version when pinned (not latest)" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+addons:
+  - name: vpc-cni
+    version: v1.19.2-eksbuild.1
+YAML
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" vpc-cni
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "$(< "${EKSCTL_LOG}")" == *"--version v1.19.2-eksbuild.1"* ]]
+}
+
+@test "cluster-create-addon: passes --service-account-role-arn when present" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+addons:
+  - name: aws-ebs-csi-driver
+    version: latest
+    serviceAccountRoleARN: arn:aws:iam::123456789012:role/ebs-csi
+YAML
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" aws-ebs-csi-driver
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -eq 0 ]]
+  [[ "$(< "${EKSCTL_LOG}")" == *"--service-account-role-arn arn:aws:iam::123456789012:role/ebs-csi"* ]]
+}
+
+@test "cluster-create-addon: omits --service-account-role-arn when absent" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" vpc-cni
+  [[ "${status}" -eq 0 ]]
+  [[ "$(< "${EKSCTL_LOG}")" != *"--service-account-role-arn"* ]]
+}
+
+@test "cluster-create-addon: passes --force through" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" vpc-cni --force
+  [[ "${status}" -eq 0 ]]
+  [[ "$(< "${EKSCTL_LOG}")" == *"--force"* ]]
+}
+
+@test "cluster-create-addon: fails when addon not in cluster.yaml" {
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" not-a-real-addon
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -ne 0 ]]
+  [[ "${output}" == *"not-a-real-addon"* ]]
+  [[ "${output}" == *"not found"* ]]
+  [[ "${output}" == *"vpc-cni"* ]]
+  [[ ! -f "${EKSCTL_LOG}" ]]
+}
+
+@test "cluster-create-addon: fails when addon defines an unsupported field" {
+  cat > "${CLUSTER_CONFIG}" <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: test-cluster
+  region: eu-west-1
+addons:
+  - name: vpc-cni
+    version: latest
+    configurationValues: '{"env":{"FOO":"bar"}}'
+YAML
+  run bash "${SCRIPTS_DIR}/cluster-create-addon" vpc-cni
+  echo "STATUS: ${status}"
+  echo "OUTPUT: ${output}"
+  [[ "${status}" -ne 0 ]]
+  [[ "${output}" == *"configurationValues"* ]]
+  [[ ! -f "${EKSCTL_LOG}" ]]
 }
