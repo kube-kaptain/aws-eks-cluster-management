@@ -44,6 +44,10 @@ now=$(date +%s)
 
 # Single yq call: extract one line per pod with all fields needed for filtering
 # Fields: namespace, name, phase, ready_count, total_count, restarts, status_reason, age_timestamp
+#
+# Every field must produce exactly one value. A field that produces two, as the
+# status reason does when several containers are waiting or terminated, adds a
+# column to the row and shifts everything after it out of alignment.
 # shellcheck disable=SC2016 # single quotes are intentional, this is a yq expression not shell
 pod_data=$(kubectl get pods --all-namespaces -o yaml | yq -r '
   .items[] |
@@ -54,7 +58,7 @@ pod_data=$(kubectl get pods --all-namespaces -o yaml | yq -r '
     (.status.containerStatuses // [] | map(select(.ready == true)) | length),  # READY numerator (eg the 1 in 1/2)
     (.status.containerStatuses // [] | length),                                # READY denominator (eg the 2 in 1/2)
     (.status.containerStatuses // [] | map(.restartCount) | .[] as $x ireduce(0; . + $x)),  # RESTARTS column (sum across all containers)
-    ((.status.containerStatuses // [])[] | .state | to_entries[0] | select(.value.reason != null) | .value.reason) // .status.phase,  # STATUS column (CrashLoopBackOff etc, or phase as fallback)
+    ([(.status.containerStatuses // [])[] | .state | to_entries[0] | select(.value.reason != null) | .value.reason][0] // .status.phase),  # STATUS column (first container reason, CrashLoopBackOff etc, or phase as fallback)
     .metadata.creationTimestamp                                                # AGE column (converted to duration in bash)
   ] | @tsv')
 
@@ -85,8 +89,13 @@ while IFS=$'\t' read -r namespace name phase ready_count total_count restarts st
   fi
 
   ready_display="${ready_count}/${total_count}"
-  created=$(date -d "${age_timestamp}" +%s)
-  age=$(format_age $((now - created)))
+  # An age we cannot work out is worth reporting as unknown, never worth
+  # aborting the listing for: the pods after this one are the point of the run
+  if created=$(date -d "${age_timestamp}" +%s 2>/dev/null); then
+    age=$(format_age $((now - created)))
+  else
+    age="unknown"
+  fi
   printf "%-20s %-50s %-8s %-20s %8s   %s\n" "${namespace}" "${name}" "${ready_display}" "${status_reason}" "${restarts}" "${age}"
   found=$((found + 1))
 done <<< "${pod_data}"
